@@ -9,7 +9,7 @@ RewriteRule ^apple/?$    https://podcasts.apple.com/us/podcast/saas-k%C3%B8bm%C3
 RewriteRule ^youtube/?$  https://www.youtube.com/@saask%C3%B8bm%C3%A6nd [R=301,L,NE]
 
 # Episode-del-links: /e/63 -> hovedsitet, som slår nummer op og sender videre til den rigtige slug
-RewriteRule ^e/([0-9]+)/?$  https://xn--saaskbmnd-n3a.dk/e/$1 [R=301,L]
+RewriteRule ^e/([0-9]+)/?$  https://xn--saaskbmnd-m3a9q.dk/e/$1 [R=301,L]
 
 # Alt andet -> forsiden på hovedsitet
-RewriteRule ^ https://xn--saaskbmnd-n3a.dk/ [R=301,L]
+RewriteRule ^ https://xn--saaskbmnd-m3a9q.dk/ [R=301,L]

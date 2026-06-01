@@ -1,7 +1,7 @@
 # SaaS Købmænd – website
 
 Website for podcasten **SaaS Købmænd**. Det lever på `saaskøbmænd.dk` (punycode
-`xn--saaskbmnd-n3a.dk`) og er hostet på [Simply.com](https://www.simply.com).
+`xn--saaskbmnd-m3a9q.dk`) og er hostet på [Simply.com](https://www.simply.com).
 
 Sitet er et enkelt PHP-script uden database eller CMS: alle episoder hentes live
 fra podcastens RSS-feed ved hvert sidevisning og renderes til HTML.

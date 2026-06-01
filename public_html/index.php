@@ -1,7 +1,7 @@
 <?php
 // Konfiguration
 $rss_url   = 'https://anchor.fm/s/10eb99934/podcast/rss';
-$site_url  = 'https://xn--saaskbmnd-n3a.dk/'; // saaskøbmænd.dk – din kanoniske base-URL
+$site_url  = 'https://xn--saaskbmnd-m3a9q.dk/'; // saaskøbmænd.dk – din kanoniske base-URL (punycode)
 $short_url = 'https://saaskoebmaend.dk';      // ASCII-domæne til korte del-links (uden æ/ø/å)
 
 // Valgfri: manuelt cover art pr. episode (fx et Spotify-cover).
@@ -483,7 +483,7 @@ if ($is_single) {
             <span>Del:</span>
             <span class="share-url" id="share-url"><?= htmlspecialchars(preg_replace('#^https?://#', '', $share_link)) ?></span>
             <button type="button" class="copy-btn" data-link="<?= htmlspecialchars($share_link) ?>"
-                    onclick="(function(b){navigator.clipboard.writeText(b.dataset.link).then(function(){var t=b.textContent;b.textContent='Kopieret ✓';setTimeout(function(){b.textContent=t;},1500);});})(this)">Kopiér link</button>
+                    onclick="copyShareLink(this)">Kopiér link</button>
         </div>
 
         <div class="player-row">
@@ -637,5 +637,34 @@ if ($is_single) {
         </div>
     <?php endif; ?>
 </div>
+
+<script>
+// Kopiér del-link. Bruger Clipboard API i secure context (HTTPS), ellers
+// en execCommand-fallback, så knappen også virker uden HTTPS.
+function copyShareLink(btn){
+  var link = btn.getAttribute('data-link');
+  function done(){
+    var t = btn.textContent;
+    btn.textContent = 'Kopieret ✓';
+    setTimeout(function(){ btn.textContent = t; }, 1500);
+  }
+  function fallback(){
+    var ta = document.createElement('textarea');
+    ta.value = link; ta.setAttribute('readonly','');
+    ta.style.position = 'fixed'; ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch(e){}
+    document.body.removeChild(ta);
+    if (ok) done();
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(link).then(done, fallback);
+  } else {
+    fallback();
+  }
+}
+</script>
 </body>
 </html>
