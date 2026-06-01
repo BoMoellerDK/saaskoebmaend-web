@@ -1,0 +1,4 @@
+.DS_Store
+**/.DS_Store
+.context/
+.ftp-deploy-sync-state.json
