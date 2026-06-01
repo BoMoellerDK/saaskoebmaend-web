@@ -1,0 +1,2 @@
+RewriteEngine on
+RewriteRule (.*) https://saaskøbmænd.dk/ [R=301,L]
