@@ -32,12 +32,13 @@ jobs:
           local-dir: ./
           server-dir: ./
 
-          # Filer/mapper der ikke skal med op på serveren
-          exclude:
-            - "**/.git*"
-            - "**/.git*/**"
-            - ".github/**"
-            - ".context/**"
-            - "**/.DS_Store"
-            - "README.md"
-            - "public_html/index.html-old"
+          # Filer/mapper der ikke skal med op på serveren.
+          # Bemærk: én glob pr. linje (action'en læser dette som en flerlinje-streng).
+          exclude: |
+            **/.git*
+            **/.git*/**
+            .github/**
+            .context/**
+            **/.DS_Store
+            README.md
+            public_html/index.html-old
