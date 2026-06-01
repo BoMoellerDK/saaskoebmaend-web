@@ -1,0 +1,19 @@
+RewriteEngine On
+
+# Redirect /index.php til forsiden (301 permanent)
+RewriteCond %{THE_REQUEST} \s/index\.php[\s?]
+RewriteRule ^index\.php$ / [R=301,L]
+
+# Bevar rigtige filer/mapper
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# sitemap.xml -> index.php håndtering
+RewriteRule ^sitemap\.xml$ index.php [QSA,L]
+
+# /episode/slug -> index.php
+RewriteRule ^episode/([a-z0-9\-]+)$ index.php [QSA,L]
+
+# Alt andet -> index.php (lader PHP vise 404-siden hvis ukendt sti)
+RewriteRule ^ index.php [QSA,L]
