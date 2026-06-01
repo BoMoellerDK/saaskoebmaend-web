@@ -1,2 +1,15 @@
-RewriteEngine on
-RewriteRule (.*) https://saaskøbmænd.dk/ [R=301,L]
+RewriteEngine On
+
+# === Korte del-links (ASCII-domæne uden æ/ø/å) ===
+# Brug fx https://saaskoebmaend.dk/spotify når du deler på LinkedIn m.m.
+
+# Platform-oversigter (NE = bevar den eksisterende %-kodning i mål-URL'en)
+RewriteRule ^spotify/?$  https://open.spotify.com/show/3PwjiFpVxnHuY3E6ARS8YN [R=301,L,NE]
+RewriteRule ^apple/?$    https://podcasts.apple.com/us/podcast/saas-k%C3%B8bm%C3%A6nd/id1810152143 [R=301,L,NE]
+RewriteRule ^youtube/?$  https://www.youtube.com/@saask%C3%B8bm%C3%A6nd [R=301,L,NE]
+
+# Episode-del-links: /e/63 -> hovedsitet, som slår nummer op og sender videre til den rigtige slug
+RewriteRule ^e/([0-9]+)/?$  https://xn--saaskbmnd-n3a.dk/e/$1 [R=301,L]
+
+# Alt andet -> forsiden på hovedsitet
+RewriteRule ^ https://xn--saaskbmnd-n3a.dk/ [R=301,L]

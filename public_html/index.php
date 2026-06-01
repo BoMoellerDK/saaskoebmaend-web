@@ -1,7 +1,17 @@
 <?php
 // Konfiguration
-$rss_url  = 'https://anchor.fm/s/10eb99934/podcast/rss';
-$site_url = 'https://xn--saaskbmnd-n3a.dk/'; // saaskøbmænd.dk – din kanoniske base-URL
+$rss_url   = 'https://anchor.fm/s/10eb99934/podcast/rss';
+$site_url  = 'https://xn--saaskbmnd-n3a.dk/'; // saaskøbmænd.dk – din kanoniske base-URL
+$short_url = 'https://saaskoebmaend.dk';      // ASCII-domæne til korte del-links (uden æ/ø/å)
+
+// Valgfri: manuelt cover art pr. episode (fx et Spotify-cover).
+// OBS: Spotifys eget custom episode-cover kommer IKKE med i RSS-feedet – feedet
+// indeholder kun ét billedfelt (itunes:image), som er det vi viser i forvejen.
+// Vil du alligevel vise et andet billede på en bestemt episode, så angiv det her
+// som  episodenummer => billed-URL  (afkommentér og udfyld efter behov):
+$episode_image_overrides = [
+    // 63 => 'https://eksempel.dk/mit-spotify-cover.jpg',
+];
 
 // ===== Hjælpefunktioner =====
 function dk_slugify($str) {
@@ -157,6 +167,14 @@ for ($i = 0; $i < $total; $i++) {
     }
 }
 
+// Anvend evt. manuelle billed-overrides (efter episodenumre er endeligt sat)
+foreach ($episodes as &$ep_ref) {
+    if (isset($episode_image_overrides[(int)$ep_ref['ep_no']])) {
+        $ep_ref['image'] = $episode_image_overrides[(int)$ep_ref['ep_no']];
+    }
+}
+unset($ep_ref);
+
 // ===== Routing =====
 $request_uri = strtok($_SERVER['REQUEST_URI'] ?? '/', '?');
 $path = rtrim($request_uri, '/');
@@ -200,6 +218,17 @@ $is_single = false; $requested_slug = null; $is_404 = false;
 
 if ($path === '' || $path === '/') {
     // forside
+} elseif (preg_match('#^/e/(\d+)$#', $path, $m)) {
+    // Kort del-link: /e/63 -> 301 til den fulde episode-URL
+    $wanted = (int)$m[1];
+    foreach ($episodes as $ep) {
+        if ((int)$ep['ep_no'] === $wanted) {
+            header('Location: ' . rtrim($site_url, '/') . '/episode/' . rawurlencode($ep['slug']), true, 301);
+            exit;
+        }
+    }
+    http_response_code(404);
+    $is_404 = true;
 } elseif (preg_match('#^/episode/([a-z0-9\-]+)$#', $path, $m)) {
     $requested_slug = $m[1];
     if (isset($slug_to_index[$requested_slug])) {
@@ -323,6 +352,12 @@ if ($is_single) {
         .single .meta { color:#666; margin-bottom:6px; }
         .single .content { margin-top:12px; color:#333; font-size:1.03rem; line-height:1.55; }
 
+        /* Del-link (kort URL) */
+        .share-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:8px 0 4px; color:#666; font-size:.95rem; }
+        .share-url { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; background:#f4f6ff; border:1px solid #d3e2ff; border-radius:8px; padding:4px 10px; color:#2546af; }
+        .copy-btn { cursor:pointer; border:1px solid #d3e2ff; background:#fff; color:#2546af; border-radius:8px; padding:4px 10px; font-size:.9rem; font-weight:600; transition:background .15s ease; }
+        .copy-btn:hover { background:#eef2ff; }
+
         /* Player + platform links på én linje */
         .player-row{
           display:flex;
@@ -443,6 +478,14 @@ if ($is_single) {
             <?php if (!empty($single['duration'])): ?> · ⏱ <?= htmlspecialchars($single['duration']) ?><?php endif; ?>
         </div>
 
+        <?php $share_link = rtrim($short_url, '/') . '/e/' . (int)$single['ep_no']; ?>
+        <div class="share-row">
+            <span>Del:</span>
+            <span class="share-url" id="share-url"><?= htmlspecialchars(preg_replace('#^https?://#', '', $share_link)) ?></span>
+            <button type="button" class="copy-btn" data-link="<?= htmlspecialchars($share_link) ?>"
+                    onclick="(function(b){navigator.clipboard.writeText(b.dataset.link).then(function(){var t=b.textContent;b.textContent='Kopieret ✓';setTimeout(function(){b.textContent=t;},1500);});})(this)">Kopiér link</button>
+        </div>
+
         <div class="player-row">
           <?php if (!empty($single['audio_url'])): ?>
               <audio controls preload="none">
@@ -454,13 +497,13 @@ if ($is_single) {
           <?php endif; ?>
 
           <div class="platform-links" aria-label="Lyt på platforme">
-            <a class="pill" href="https://podcasts.apple.com/us/podcast/saas-k%C3%B8bm%C3%A6nd/id1810152143" target="_blank" rel="noopener">
+            <a class="pill" href="<?= htmlspecialchars($short_url) ?>/apple" target="_blank" rel="noopener">
               <span class="dot" aria-hidden="true"></span> Apple
             </a>
-            <a class="pill" href="https://open.spotify.com/show/3PwjiFpVxnHuY3E6ARS8YN?si=a1a2d0a14f524014" target="_blank" rel="noopener">
+            <a class="pill" href="<?= htmlspecialchars($short_url) ?>/spotify" target="_blank" rel="noopener">
               <span class="dot" aria-hidden="true"></span> Spotify
             </a>
-            <a class="pill" href="https://www.youtube.com/@saask%C3%B8bm%C3%A6nd" target="_blank" rel="noopener">
+            <a class="pill" href="<?= htmlspecialchars($short_url) ?>/youtube" target="_blank" rel="noopener">
               <span class="dot" aria-hidden="true"></span> YouTube
             </a>
           </div>
@@ -547,9 +590,9 @@ if ($is_single) {
 
         <!-- ✅ Forside-links tilbage til præcis original markup (ingen inline style) -->
         <div class="links">
-            <a class="plink" href="https://podcasts.apple.com/us/podcast/saas-k%C3%B8bm%C3%A6nd/id1810152143" target="_blank" rel="noopener">Apple Podcasts</a>
-            <a class="plink" href="https://open.spotify.com/show/3PwjiFpVxnHuY3E6ARS8YN?si=a1a2d0a14f524014" target="_blank" rel="noopener">Spotify</a>
-            <a class="plink" href="https://www.youtube.com/@saask%C3%B8bm%C3%A6nd" target="_blank" rel="noopener">YouTube</a>
+            <a class="plink" href="<?= htmlspecialchars($short_url) ?>/apple" target="_blank" rel="noopener">Apple Podcasts</a>
+            <a class="plink" href="<?= htmlspecialchars($short_url) ?>/spotify" target="_blank" rel="noopener">Spotify</a>
+            <a class="plink" href="<?= htmlspecialchars($short_url) ?>/youtube" target="_blank" rel="noopener">YouTube</a>
         </div>
 
         <?php foreach ($episodes as $ep): ?>
