@@ -40,6 +40,14 @@ $platforms = [
     'YouTube'        => $short_url . '/youtube',
 ];
 
+// Kanoniske platform-profiler (til schema.org sameAs – binder podcastens identitet
+// sammen på tværs af platforme, vigtigt for GEO/entity-genkendelse)
+$platform_profiles = [
+    'https://open.spotify.com/show/3PwjiFpVxnHuY3E6ARS8YN',
+    'https://podcasts.apple.com/us/podcast/saas-k%C3%B8bm%C3%A6nd/id1810152143',
+    'https://www.youtube.com/@saask%C3%B8bm%C3%A6nd',
+];
+
 // ===== Hjælpefunktioner =====
 function dk_slugify($str) {
     $str = mb_strtolower($str, 'UTF-8');
@@ -402,7 +410,8 @@ if (preg_match('#^/llms\.txt$#', $request_uri)) {
         $loc = $base . '/episode/' . rawurlencode($ep['slug']);
         // Titel skal ikke kunne bryde markdown-linket: erstat []-tegn og fold whitespace
         $safe_title = trim(preg_replace('/\s+/', ' ', strtr($ep['title'], ['[' => '(', ']' => ')'])));
-        $L[] = '- [Episode ' . (int)$ep['ep_no'] . ': ' . $safe_title . '](' . $loc . '): ' . teaser($ep['content'], 160);
+        $date_part = $ep['date_iso'] ? ' (' . $ep['date_iso'] . ')' : '';
+        $L[] = '- [Episode ' . (int)$ep['ep_no'] . ': ' . $safe_title . '](' . $loc . ')' . $date_part . ': ' . teaser($ep['content'], 160);
     }
     $L[] = '';
     $L[] = '## Lyt';
@@ -530,6 +539,7 @@ if ($is_single && $single) {
         'inLanguage'  => 'da-DK',
         'image'       => $cover_image ?: null,
         'webFeed'     => $rss_url,
+        'sameAs'      => $platform_profiles,
         'author'      => $ld_persons,
     ];
 }
@@ -565,6 +575,10 @@ if ($ld_graph) {
     <?php if ($cover_image): ?>
     <link rel="apple-touch-icon" href="<?= htmlspecialchars($cover_image) ?>">
     <?php endif; ?>
+    <meta name="theme-color" content="#2546af">
+
+    <!-- Podcast-feed (gør RSS-feedet synligt for feed-læsere og podcast-crawlere) -->
+    <link rel="alternate" type="application/rss+xml" title="<?= htmlspecialchars($site_name) ?>" href="<?= htmlspecialchars($rss_url) ?>">
 
     <!-- Open Graph -->
     <meta property="og:type" content="<?= $is_single ? 'article' : 'website' ?>">
@@ -614,6 +628,7 @@ if ($ld_graph) {
         .episode-hero-wrap { display:flex; justify-content:flex-start; margin:14px 0 12px; }
         .episode-hero {
             width:100%;
+            aspect-ratio:1 / 1;
             object-fit:cover;
             border-radius:20px;
             box-shadow:0 10px 40px rgba(0,0,0,0.10);
@@ -769,7 +784,7 @@ if ($ld_graph) {
 
     <?php if (!$is_single && !$is_404): ?>
         <?php if (!empty($cover_image)): ?>
-            <img src="<?= htmlspecialchars($cover_image) ?>" class="podcast-cover" alt="SaaS Købmænd podcast cover">
+            <img src="<?= htmlspecialchars($cover_image) ?>" class="podcast-cover" width="160" height="160" decoding="async" alt="SaaS Købmænd podcast cover">
         <?php endif; ?>
     <?php endif; ?>
 
@@ -815,7 +830,7 @@ if ($ld_graph) {
         <?php $hero = !empty($single['image']) ? $single['image'] : $cover_image; ?>
         <?php if (!empty($hero)): ?>
           <div class="episode-hero-wrap">
-            <img src="<?= htmlspecialchars($hero) ?>" class="episode-hero" alt="Cover for episode <?= (int)$single['ep_no'] ?>: <?= htmlspecialchars($single['title']) ?>">
+            <img src="<?= htmlspecialchars($hero) ?>" class="episode-hero" loading="lazy" decoding="async" width="600" height="600" alt="Cover for episode <?= (int)$single['ep_no'] ?>: <?= htmlspecialchars($single['title']) ?>">
           </div>
         <?php endif; ?>
 
