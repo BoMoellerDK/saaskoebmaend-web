@@ -26,8 +26,25 @@ fra podcastens RSS-feed ved hvert sidevisning og renderes til HTML.
 | `/` | Forside med alle episoder |
 | `/episode/{slug}` | Enkelt episode |
 | `/e/{nummer}` | Kort del-link → 301 til `/episode/{slug}` |
-| `/sitemap.xml` | XML-sitemap |
+| `/sitemap.xml` | XML-sitemap (med billed-namespace) |
+| `/llms.txt` | Dynamisk oversigt til AI-/GEO-crawlers (genereres fra feedet) |
+| `/robots.txt` | Statisk fil – tillader søgemaskiner + AI-bots, linker til sitemap |
+| `/favicon.svg` | Statisk SVG-favicon |
 | alt andet | 404-side |
+
+### SEO & GEO
+
+- **RSS-feedet caches** i `sys_get_temp_dir()` i 15 min. Hvis Anchor er nede eller
+  langsom, serverer sitet sidste kendte version i stedet for at fejle.
+- Hver side har **JSON-LD schema.org**: `PodcastSeries` på forsiden,
+  `PodcastEpisode` + `AudioObject` + `BreadcrumbList` på episode-sider,
+  samt `Person` for værterne.
+- Komplet **Open Graph + Twitter Card** (inkl. `og:audio` og
+  `article:published_time` på episoder).
+- Synlig **brødkrummesti** og **"Flere episoder"** for intern linkbuilding.
+- Værter, podcast-beskrivelse og platform-links sættes ét sted øverst i
+  `index.php` (`$hosts`, `$site_name`, `$series_description`, `$platforms`) og
+  genbruges i schema.org og `llms.txt`.
 
 ## Domæner
 
