@@ -13,6 +13,33 @@ $episode_image_overrides = [
     // 63 => 'https://eksempel.dk/mit-spotify-cover.jpg',
 ];
 
+// Navn + beskrivelse på podcasten (bruges til SEO, schema.org og llms.txt)
+$site_name = 'SaaS Købmænd';
+$series_description = 'Hør SaaS Købmænd: ærlige samtaler med danske SaaS-iværksættere om forretning, vækst og livet som software-entreprenør.';
+
+// Værterne (bruges til schema.org Person + llms.txt)
+$hosts = [
+    [
+        'name'   => 'Anders Eiler',
+        'url'    => 'https://anderseiler.com',
+        'bio'    => 'SaaS-iværksætter og podcastvært. Står bag Herodesk.',
+        'sameAs' => ['https://herodesk.io'],
+    ],
+    [
+        'name'   => 'Bo Møller',
+        'url'    => 'https://bandeja.org',
+        'bio'    => 'Serieiværksætter med fokus på SaaS (Alunta, resOS, AnyHOA, PingPuffin m.fl.).',
+        'sameAs' => ['https://alunta.com', 'https://resos.com', 'https://octoreports.com', 'https://pingpuffin.com'],
+    ],
+];
+
+// Lyt-platforme (bruges til del-links + llms.txt)
+$platforms = [
+    'Apple Podcasts' => $short_url . '/apple',
+    'Spotify'        => $short_url . '/spotify',
+    'YouTube'        => $short_url . '/youtube',
+];
+
 // ===== Hjælpefunktioner =====
 function dk_slugify($str) {
     $str = mb_strtolower($str, 'UTF-8');
@@ -70,6 +97,137 @@ function format_duration($seconds) {
     if ($h > 0) return sprintf('%d:%02d:%02d', $h, $m, $s);
     return sprintf('%d:%02d', $m, $s);
 }
+// Ren tekst-teaser fra (evt. HTML-)indhold: fjern tags, fold whitespace, klip til længde
+function teaser($html, $limit, $ellipsis = true) {
+    $text = strip_tags((string)$html);
+    // Afkod entiteter (&quot; &amp; …) til ren tekst – ellers lækker de i llms.txt
+    // og dobbelt-encodes (&amp;quot;) når output senere køres gennem htmlspecialchars.
+    $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    $text = trim(preg_replace('/\s+/', ' ', $text));
+    if (mb_strlen($text, 'UTF-8') <= $limit) return $text;
+    return mb_substr($text, 0, $limit, 'UTF-8') . ($ellipsis ? '…' : '');
+}
+// ISO 8601-varighed (fx "PT1H2M3S") til schema.org timeRequired
+function iso8601_duration($seconds) {
+    if (!$seconds) return null;
+    $h = intdiv($seconds, 3600);
+    $m = intdiv($seconds % 3600, 60);
+    $s = $seconds % 60;
+    $out = 'PT';
+    if ($h) $out .= $h . 'H';
+    if ($m) $out .= $m . 'M';
+    if ($s) $out .= $s . 'S';
+    return $out === 'PT' ? 'PT0S' : $out;
+}
+// Sanitér HTML fra RSS-feedet: tillad kun en whitelist af tags, fjern ALLE
+// attributter undtagen sikre href'er på <a> (strip_tags fjerner tags, men ikke
+// fx onclick="" eller href="javascript:" på tilladte tags – derfor DOM-rensning).
+function sanitize_episode_html($html) {
+    $html = (string)$html;
+    if (trim($html) === '') return '';
+
+    $allowed = ['p','br','strong','em','b','i','ul','ol','li','a','blockquote','h2','h3','h4','code','pre'];
+
+    // Fallback hvis ext-dom mangler: render som ren tekst (aldrig rå HTML).
+    if (!class_exists('DOMDocument')) {
+        return nl2br(htmlspecialchars(trim(strip_tags($html)), ENT_QUOTES, 'UTF-8'));
+    }
+
+    $doc = new DOMDocument();
+    libxml_use_internal_errors(true);
+    $doc->loadHTML(
+        '<?xml encoding="UTF-8"><div id="__wrap">' . $html . '</div>',
+        LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD
+    );
+    libxml_clear_errors();
+
+    $xpath = new DOMXPath($doc);
+    foreach (iterator_to_array($xpath->query('//*')) as $el) {
+        if (!$el->parentNode) continue; // allerede fjernet som del af et droppet subtræ
+        $tag = strtolower($el->nodeName);
+        if ($tag === 'div' && $el->getAttribute('id') === '__wrap') continue; // wrapper
+
+        if (!in_array($tag, $allowed, true)) {
+            if (in_array($tag, ['script','style','template','noscript'], true)) {
+                // Drop hele subtræet inkl. tekstindhold (ikke bare tagget)
+                if ($el->parentNode) $el->parentNode->removeChild($el);
+            } else {
+                // Andre ikke-tilladte tags: pak indholdet ud (behold teksten)
+                while ($el->firstChild) $el->parentNode->insertBefore($el->firstChild, $el);
+                $el->parentNode->removeChild($el);
+            }
+            continue;
+        }
+
+        // Fjern alle attributter undtagen en sikker href på <a>
+        for ($i = $el->attributes->length - 1; $i >= 0; $i--) {
+            $attr = $el->attributes->item($i);
+            $keep = $tag === 'a'
+                && strtolower($attr->name) === 'href'
+                && preg_match('#^(https?:|mailto:|/|\#)#i', trim($attr->value));
+            if (!$keep) $el->removeAttribute($attr->name);
+        }
+        if ($tag === 'a' && $el->getAttribute('href') !== '') {
+            $el->setAttribute('rel', 'noopener nofollow ugc');
+            $el->setAttribute('target', '_blank');
+        }
+    }
+
+    $wrap = $xpath->query('//*[@id="__wrap"]')->item(0);
+    $out = '';
+    if ($wrap) foreach ($wrap->childNodes as $c) $out .= $doc->saveHTML($c);
+    return $out;
+}
+// Fjern tomme felter (null, '', []) rekursivt fra et JSON-LD-træ
+function ld_clean($v) {
+    if (!is_array($v)) return $v;
+    $out = [];
+    foreach ($v as $k => $val) {
+        $val = ld_clean($val);
+        if ($val === null || $val === '' || $val === []) continue;
+        $out[$k] = $val;
+    }
+    return $out;
+}
+
+// Hent RSS med fil-cache: hurtig respons + sitet bliver ikke nede hvis feedet
+// er langsomt/utilgængeligt (falder tilbage på sidste kendte version).
+function fetch_rss_cached($rss_url, $ttl = 900) {
+    $cache_file = sys_get_temp_dir() . '/saaskobmaend_rss_' . md5($rss_url) . '.xml';
+
+    // 1) Frisk cache? Brug den.
+    if (is_file($cache_file) && (time() - (int)@filemtime($cache_file) < $ttl)) {
+        $xml = @file_get_contents($cache_file);
+        if ($xml !== false) {
+            $rss = @simplexml_load_string($xml);
+            if ($rss) return $rss;
+        }
+    }
+
+    // 2) Hent friskt feed (med timeout, så en langsom server ikke hænger sitet).
+    $ctx = stream_context_create([
+        'http' => ['timeout' => 8, 'user_agent' => 'saaskobmaend-web/1.0'],
+        'https'=> ['timeout' => 8],
+    ]);
+    $xml = @file_get_contents($rss_url, false, $ctx);
+    if ($xml !== false) {
+        $rss = @simplexml_load_string($xml);
+        if ($rss) {
+            @file_put_contents($cache_file, $xml, LOCK_EX);
+            return $rss;
+        }
+    }
+
+    // 3) Hentning fejlede – fald tilbage på (evt. forældet) cache.
+    if (is_file($cache_file)) {
+        $xml = @file_get_contents($cache_file);
+        if ($xml !== false) {
+            $rss = @simplexml_load_string($xml);
+            if ($rss) return $rss;
+        }
+    }
+    return false;
+}
 
 // Episode thumbnail/cover-art (prioritér stort billede)
 function get_episode_image_from_item($item, $fallback = '') {
@@ -90,8 +248,8 @@ function get_episode_image_from_item($item, $fallback = '') {
     return '';
 }
 
-// ===== Hent RSS =====
-$rss = @simplexml_load_file($rss_url);
+// ===== Hent RSS (med cache) =====
+$rss = fetch_rss_cached($rss_url, 900); // cache i 15 min
 if (!$rss) { http_response_code(500); die('<h2>Kunne ikke hente podcast-feedet.</h2>'); }
 
 // Podcast cover — preferér itunes:image (typisk stor) først
@@ -114,6 +272,7 @@ foreach ($rss->channel->item as $item) {
     $title = (string)$item->title;
     $pub_ts = strtotime((string)$item->pubDate);
     $date_iso = $pub_ts ? date('Y-m-d', $pub_ts) : '';
+    $date_iso_full = $pub_ts ? date('c', $pub_ts) : ''; // fuld ISO8601 til OG/schema
     $date_human = $pub_ts ? date('d.m.Y', $pub_ts) : '';
     $desc_raw = (string)$item->description;
 
@@ -140,6 +299,7 @@ foreach ($rss->channel->item as $item) {
         'slug'        => $slug,
         'date_human'  => $date_human,
         'date_iso'    => $date_iso,
+        'date_iso_full' => $date_iso_full,
         'content'     => $content_encoded ?: $desc_raw,
         'audio_url'   => $audio_url,
         'ep_no'       => $ep_no,
@@ -190,7 +350,8 @@ if (preg_match('#^/sitemap\.xml$#', $request_uri)) {
     if ($latest_iso === '') $latest_iso = date('Y-m-d');
 
     echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
-    echo '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' . "\n";
+    echo '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"' .
+         ' xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">' . "\n";
 
     echo '  <url>' . "\n";
     echo '    <loc>' . htmlspecialchars($base . '/', ENT_XML1) . '</loc>' . "\n";
@@ -207,9 +368,49 @@ if (preg_match('#^/sitemap\.xml$#', $request_uri)) {
         echo '    <lastmod>' . htmlspecialchars($lastmod) . '</lastmod>' . "\n";
         echo '    <changefreq>monthly</changefreq>' . "\n";
         echo '    <priority>0.8</priority>' . "\n";
+        if (!empty($ep['image'])) {
+            echo '    <image:image>' . "\n";
+            echo '      <image:loc>' . htmlspecialchars($ep['image'], ENT_XML1) . '</image:loc>' . "\n";
+            echo '      <image:title>' . htmlspecialchars($ep['title'], ENT_XML1) . '</image:title>' . "\n";
+            echo '    </image:image>' . "\n";
+        }
         echo '  </url>' . "\n";
     }
     echo '</urlset>';
+    exit;
+}
+
+// --- LLMS.TXT (GEO / AI-crawlers) ---
+if (preg_match('#^/llms\.txt$#', $request_uri)) {
+    header('Content-Type: text/plain; charset=UTF-8');
+    $base = rtrim($site_url, '/');
+    $L = [];
+    $L[] = '# ' . $site_name;
+    $L[] = '';
+    $L[] = '> ' . $series_description;
+    $L[] = '';
+    $L[] = 'SaaS Købmænd er en dansk podcast om SaaS, iværksætteri og forretning. '
+         . 'Nye episoder udkommer (næsten) hver mandag. Sproget er dansk.';
+    $L[] = '';
+    $L[] = '## Værter';
+    foreach ($hosts as $h) {
+        $L[] = '- ' . $h['name'] . ' — ' . $h['bio'] . ' ' . $h['url'];
+    }
+    $L[] = '';
+    $L[] = '## Episoder';
+    foreach ($episodes as $ep) {
+        $loc = $base . '/episode/' . rawurlencode($ep['slug']);
+        // Titel skal ikke kunne bryde markdown-linket: erstat []-tegn og fold whitespace
+        $safe_title = trim(preg_replace('/\s+/', ' ', strtr($ep['title'], ['[' => '(', ']' => ')'])));
+        $L[] = '- [Episode ' . (int)$ep['ep_no'] . ': ' . $safe_title . '](' . $loc . '): ' . teaser($ep['content'], 160);
+    }
+    $L[] = '';
+    $L[] = '## Lyt';
+    foreach ($platforms as $name => $url) {
+        $L[] = '- ' . $name . ': ' . $url;
+    }
+    $L[] = '';
+    echo implode("\n", $L);
     exit;
 }
 
@@ -244,7 +445,7 @@ if ($path === '' || $path === '/') {
 
 // ===== SEO / OG =====
 $page_title = "SaaS Købmænd Podcast – Alle episoder";
-$page_description = "Hør SaaS Købmænd: ærlige samtaler med danske SaaS-iværksættere om forretning, vækst og livet som software-entreprenør.";
+$page_description = $series_description;
 $page_url = rtrim($site_url, '/') . '/';
 $og_image = $cover_image;
 
@@ -255,8 +456,7 @@ if ($is_single) {
     $single = $episodes[$i];
 
     $page_title = $single['title'] . " – SaaS Købmænd";
-    $clean_text = trim(preg_replace('/\s+/', ' ', strip_tags($single['content'])));
-    $page_description = mb_substr($clean_text, 0, 200, 'UTF-8') . (mb_strlen($clean_text,'UTF-8')>200 ? '…' : '');
+    $page_description = teaser($single['content'], 200);
     $page_url = rtrim($site_url, '/') . '/episode/' . rawurlencode($single['slug']);
 
     $og_image = !empty($single['image']) ? $single['image'] : $cover_image;
@@ -275,7 +475,72 @@ if ($is_single) {
 } elseif ($is_404) {
     $page_title = "404 – Siden findes ikke · SaaS Købmænd";
     $page_description = "Ups! Den side findes ikke. Måske leder du efter en af vores podcast-episoder?";
-    $page_url = rtrim($site_url, '/') . $_SERVER['REQUEST_URI'];
+    // $page_url bevares som forsiden (default) – en 404 skal ikke kanonisere til sig selv.
+}
+
+// ===== JSON-LD (schema.org) =====
+$ld_base = rtrim($site_url, '/');
+$ld_persons = [];
+foreach ($hosts as $h) {
+    $p = ['@type' => 'Person', 'name' => $h['name'], 'url' => $h['url']];
+    if (!empty($h['sameAs'])) $p['sameAs'] = $h['sameAs'];
+    $ld_persons[] = $p;
+}
+
+$ld_graph = [];
+if ($is_single && $single) {
+    $episode_node = [
+        '@type'         => 'PodcastEpisode',
+        'url'           => $page_url,
+        'name'          => $single['title'],
+        'datePublished' => $single['date_iso_full'] ?: ($single['date_iso'] ?: null),
+        'episodeNumber' => (int)$single['ep_no'],
+        'timeRequired'  => iso8601_duration($single['duration_s']),
+        'description'   => $page_description,
+        'image'         => $og_image ?: null,
+        'inLanguage'    => 'da-DK',
+        'partOfSeries'  => [
+            '@type' => 'PodcastSeries',
+            'name'  => $site_name,
+            'url'   => $ld_base . '/',
+        ],
+        'author'        => $ld_persons,
+    ];
+    if (!empty($single['audio_url'])) {
+        $episode_node['associatedMedia'] = [
+            '@type'          => 'AudioObject',
+            'contentUrl'     => $single['audio_url'],
+            'encodingFormat' => 'audio/mpeg',
+        ];
+    }
+    $ld_graph[] = $episode_node;
+    $ld_graph[] = [
+        '@type'           => 'BreadcrumbList',
+        'itemListElement' => [
+            ['@type' => 'ListItem', 'position' => 1, 'name' => 'Forside', 'item' => $ld_base . '/'],
+            ['@type' => 'ListItem', 'position' => 2, 'name' => 'Episode ' . (int)$single['ep_no'], 'item' => $page_url],
+        ],
+    ];
+} elseif (!$is_404) {
+    $ld_graph[] = [
+        '@type'       => 'PodcastSeries',
+        'name'        => $site_name,
+        'url'         => $ld_base . '/',
+        'description' => $series_description,
+        'inLanguage'  => 'da-DK',
+        'image'       => $cover_image ?: null,
+        'webFeed'     => $rss_url,
+        'author'      => $ld_persons,
+    ];
+}
+
+$json_ld = null;
+if ($ld_graph) {
+    $doc = (count($ld_graph) === 1)
+        ? array_merge(['@context' => 'https://schema.org'], $ld_graph[0])
+        : ['@context' => 'https://schema.org', '@graph' => $ld_graph];
+    // Slashes escapes IKKE-unescaped, så "</script>" i data ikke kan bryde ud af <script>.
+    $json_ld = json_encode(ld_clean($doc), JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
 }
 
 // ===== View =====
@@ -287,23 +552,47 @@ if ($is_single) {
     <title><?= htmlspecialchars($page_title) ?></title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="<?= htmlspecialchars($page_description) ?>">
+    <?php if ($is_404): ?>
+    <meta name="robots" content="noindex">
+    <?php else: ?>
     <link rel="canonical" href="<?= htmlspecialchars($page_url) ?>">
+    <?php endif; ?>
 
     <?php if ($is_single && $prev_link): ?><link rel="prev" href="<?= $prev_link ?>"><?php endif; ?>
     <?php if ($is_single && $next_link): ?><link rel="next" href="<?= $next_link ?>"><?php endif; ?>
 
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <?php if ($cover_image): ?>
-    <link rel="icon" type="image/png" href="<?= htmlspecialchars($cover_image) ?>">
+    <link rel="apple-touch-icon" href="<?= htmlspecialchars($cover_image) ?>">
     <?php endif; ?>
 
     <!-- Open Graph -->
     <meta property="og:type" content="<?= $is_single ? 'article' : 'website' ?>">
+    <meta property="og:site_name" content="<?= htmlspecialchars($site_name) ?>">
+    <meta property="og:locale" content="da_DK">
     <meta property="og:url" content="<?= htmlspecialchars($page_url) ?>">
     <meta property="og:title" content="<?= htmlspecialchars($page_title) ?>">
     <meta property="og:description" content="<?= htmlspecialchars($page_description) ?>">
     <?php if (!empty($og_image)): ?>
       <meta property="og:image" content="<?= htmlspecialchars($og_image) ?>">
       <meta property="og:image:alt" content="<?= htmlspecialchars($page_title) ?>">
+    <?php endif; ?>
+    <?php if ($is_single && $single): ?>
+      <?php $pub_og = $single['date_iso_full'] ?: $single['date_iso']; ?>
+      <?php if (!empty($pub_og)): ?><meta property="article:published_time" content="<?= htmlspecialchars($pub_og) ?>"><?php endif; ?>
+      <?php if (!empty($single['audio_url'])): ?><meta property="og:audio" content="<?= htmlspecialchars($single['audio_url']) ?>"><meta property="og:audio:type" content="audio/mpeg"><?php endif; ?>
+    <?php endif; ?>
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="<?= htmlspecialchars($page_title) ?>">
+    <meta name="twitter:description" content="<?= htmlspecialchars($page_description) ?>">
+    <?php if (!empty($og_image)): ?><meta name="twitter:image" content="<?= htmlspecialchars($og_image) ?>"><?php endif; ?>
+
+    <?php if ($json_ld): ?>
+    <script type="application/ld+json">
+<?= $json_ld ?>
+</script>
     <?php endif; ?>
 
     <!-- Plausible -->
@@ -349,6 +638,20 @@ if ($is_single) {
         .single h1 { text-align:left; font-size:1.9rem; }
         .back { display:inline-block; margin-bottom:14px; text-decoration:none; color:#2546af; }
         .back:hover { text-decoration:underline; }
+
+        /* Brødkrummesti */
+        .crumbs { font-size:.92rem; color:#888; margin-bottom:12px; }
+        .crumbs a { color:#2546af; text-decoration:none; }
+        .crumbs a:hover { text-decoration:underline; }
+        .crumbs span { margin:0 2px; }
+
+        /* Relaterede episoder */
+        .related { margin-top:34px; }
+        .related h2 { font-size:1.15rem; font-weight:600; margin:0 0 12px; }
+        .related-item { display:flex; align-items:baseline; gap:10px; padding:10px 12px; margin:6px 0; border:1px solid #eee; border-radius:12px; text-decoration:none; color:inherit; transition:background .15s ease, border-color .15s ease; }
+        .related-item:hover { background:#fafbff; border-color:#d4dcff; }
+        .related-no { flex:0 0 auto; font-weight:600; color:#2546af; font-size:.92rem; }
+        .related-title { color:#222; font-size:1rem; }
         .single .meta { color:#666; margin-bottom:6px; }
         .single .content { margin-top:12px; color:#333; font-size:1.03rem; line-height:1.55; }
 
@@ -466,12 +769,16 @@ if ($is_single) {
 
     <?php if (!$is_single && !$is_404): ?>
         <?php if (!empty($cover_image)): ?>
-            <img src="<?= htmlspecialchars($cover_image) ?>" class="podcast-cover" alt="Podcast cover">
+            <img src="<?= htmlspecialchars($cover_image) ?>" class="podcast-cover" alt="SaaS Købmænd podcast cover">
         <?php endif; ?>
     <?php endif; ?>
 
     <?php if ($is_single && !$is_404): ?>
-        <a class="back" href="/">← Tilbage til alle episoder</a>
+        <nav class="crumbs" aria-label="Brødkrummesti">
+            <a href="/">Forside</a>
+            <span aria-hidden="true">›</span>
+            <span>Episode <?= (int)$single['ep_no'] ?></span>
+        </nav>
         <h1><?= htmlspecialchars($single['title']) ?></h1>
         <div class="meta">
             <?= htmlspecialchars($single['date_human']) ?> · Episode <?= (int)$single['ep_no'] ?>
@@ -497,22 +804,18 @@ if ($is_single) {
           <?php endif; ?>
 
           <div class="platform-links" aria-label="Lyt på platforme">
-            <a class="pill" href="<?= htmlspecialchars($short_url) ?>/apple" target="_blank" rel="noopener">
-              <span class="dot" aria-hidden="true"></span> Apple
+            <?php foreach ($platforms as $name => $url): ?>
+            <a class="pill" href="<?= htmlspecialchars($url) ?>" target="_blank" rel="noopener">
+              <span class="dot" aria-hidden="true"></span> <?= htmlspecialchars(strtok($name, ' ')) ?>
             </a>
-            <a class="pill" href="<?= htmlspecialchars($short_url) ?>/spotify" target="_blank" rel="noopener">
-              <span class="dot" aria-hidden="true"></span> Spotify
-            </a>
-            <a class="pill" href="<?= htmlspecialchars($short_url) ?>/youtube" target="_blank" rel="noopener">
-              <span class="dot" aria-hidden="true"></span> YouTube
-            </a>
+            <?php endforeach; ?>
           </div>
         </div>
 
         <?php $hero = !empty($single['image']) ? $single['image'] : $cover_image; ?>
         <?php if (!empty($hero)): ?>
           <div class="episode-hero-wrap">
-            <img src="<?= htmlspecialchars($hero) ?>" class="episode-hero" alt="Episode cover">
+            <img src="<?= htmlspecialchars($hero) ?>" class="episode-hero" alt="Cover for episode <?= (int)$single['ep_no'] ?>: <?= htmlspecialchars($single['title']) ?>">
           </div>
         <?php endif; ?>
 
@@ -520,10 +823,11 @@ if ($is_single) {
             <?php
               $has_html = $single['content'] !== '' && $single['content'] !== strip_tags($single['content']);
               if ($has_html) {
-                  $allowed = '<p><br><strong><em><b><i><ul><ol><li><a><blockquote><h2><h3><h4><code><pre>';
-                  echo strip_tags($single['content'], $allowed);
+                  echo sanitize_episode_html($single['content']);
               } else {
-                  echo nl2br(htmlspecialchars(trim($single['content'])));
+                  // Ren tekst: afkod evt. entiteter først, så de ikke dobbelt-encodes
+                  $plain = html_entity_decode(trim($single['content']), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+                  echo nl2br(htmlspecialchars($plain));
               }
             ?>
         </div>
@@ -540,6 +844,27 @@ if ($is_single) {
               <span class="nav-btn right" style="opacity:.5; pointer-events:none; text-align:right;">Ingen næste</span>
             <?php endif; ?>
         </div>
+
+        <?php
+          // Relaterede episoder: de nyeste andre episoder (god intern linkbuilding)
+          $related = [];
+          foreach ($episodes as $rep) {
+              if ((int)$rep['ep_no'] === (int)$single['ep_no']) continue;
+              $related[] = $rep;
+              if (count($related) >= 4) break;
+          }
+        ?>
+        <?php if ($related): ?>
+        <section class="related" aria-label="Flere episoder">
+            <h2>Flere episoder</h2>
+            <?php foreach ($related as $rep): ?>
+            <a class="related-item" href="<?= '/episode/' . htmlspecialchars($rep['slug']) ?>">
+                <span class="related-no">Ep <?= (int)$rep['ep_no'] ?></span>
+                <span class="related-title"><?= htmlspecialchars($rep['title']) ?></span>
+            </a>
+            <?php endforeach; ?>
+        </section>
+        <?php endif; ?>
 
         <!-- CTA -->
         <div class="newsletter-cta">
@@ -590,25 +915,21 @@ if ($is_single) {
 
         <!-- ✅ Forside-links tilbage til præcis original markup (ingen inline style) -->
         <div class="links">
-            <a class="plink" href="<?= htmlspecialchars($short_url) ?>/apple" target="_blank" rel="noopener">Apple Podcasts</a>
-            <a class="plink" href="<?= htmlspecialchars($short_url) ?>/spotify" target="_blank" rel="noopener">Spotify</a>
-            <a class="plink" href="<?= htmlspecialchars($short_url) ?>/youtube" target="_blank" rel="noopener">YouTube</a>
+            <?php foreach ($platforms as $name => $url): ?>
+            <a class="plink" href="<?= htmlspecialchars($url) ?>" target="_blank" rel="noopener"><?= htmlspecialchars($name) ?></a>
+            <?php endforeach; ?>
         </div>
 
         <?php foreach ($episodes as $ep): ?>
         <div class="episode">
             <a class="episode-card" href="<?= '/episode/' . htmlspecialchars($ep['slug']) ?>">
-                <div class="episode-title"><?= htmlspecialchars($ep['title']) ?></div>
+                <h2 class="episode-title"><?= htmlspecialchars($ep['title']) ?></h2>
                 <div class="episode-date">
                     Episode <?= (int)$ep['ep_no'] ?> · <?= htmlspecialchars($ep['date_human']) ?>
                     <?php if (!empty($ep['duration'])): ?> · ⏱ <?= htmlspecialchars($ep['duration']) ?><?php endif; ?>
                 </div>
                 <div class="teaser">
-                    <?php
-                      $teaser = trim(preg_replace('/\s+/', ' ', strip_tags($ep['content'])));
-                      $limit = 110;
-                      echo htmlspecialchars(mb_substr($teaser, 0, $limit, 'UTF-8') . (mb_strlen($teaser,'UTF-8')>$limit ? '…' : ''));
-                    ?>
+                    <?= htmlspecialchars(teaser($ep['content'], 110)) ?>
                 </div>
             </a>
         </div>

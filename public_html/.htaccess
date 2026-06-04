@@ -12,6 +12,9 @@ RewriteRule ^ - [L]
 # sitemap.xml -> index.php håndtering
 RewriteRule ^sitemap\.xml$ index.php [QSA,L]
 
+# llms.txt -> index.php (genereres dynamisk for AI-crawlers)
+RewriteRule ^llms\.txt$ index.php [QSA,L]
+
 # /episode/slug -> index.php
 RewriteRule ^episode/([a-z0-9\-]+)$ index.php [QSA,L]
 
