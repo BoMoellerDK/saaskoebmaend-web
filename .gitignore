@@ -2,3 +2,4 @@
 **/.DS_Store
 .context/
 .ftp-deploy-sync-state.json
+data/youtube-catalog-runtime.json
