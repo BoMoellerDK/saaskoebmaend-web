@@ -3,6 +3,10 @@
 Website for podcasten **SaaS Købmænd**. Det lever på `saaskøbmænd.dk` (punycode
 `xn--saaskbmnd-m3a9q.dk`) og er hostet på [Simply.com](https://www.simply.com).
 
+Runtime-kravet er **PHP 7.4 eller nyere** med `mbstring`, `SimpleXML` og `DOM`.
+Pull requests testes eksplicit på PHP 7.4, så nyere PHP-funktioner ikke utilsigtet
+kan afkorte outputtet på produktion.
+
 Sitet er et enkelt PHP-script uden database eller CMS: episoder hentes fra
 podcastens RSS-feed, caches og renderes til HTML.
 
@@ -120,6 +124,10 @@ Push til `main` → GitHub Actions uploader automatisk til Simply via FTPS
 
 Repoets rod spejles til FTP-roden. `.git`, `.github`, `.context` og `.md`-filer
 uploades ikke. Workflowet kan også køres manuelt fra **Actions**-fanen.
+
+Den permanente regressionstest kan køres lokalt med `bash tests/run-release.sh`.
+Den kontrollerer bl.a. komplet HTML-output, alle RSS-episoder, redirects,
+værtssider, sitemap, katalog-prioritet og Open Graph-data for hver episodeside.
 
 ## Analytics
 

@@ -1,0 +1,32 @@
+name: Test website
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  release-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hent koden
+        uses: actions/checkout@v4
+
+      - name: Installér PHP 7.4
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '7.4'
+          extensions: mbstring, simplexml, dom
+          coverage: none
+
+      - name: Kontrollér syntaks og data
+        run: |
+          php -l public_html/index.php
+          php -l tests/router.php
+          php -l tests/release.php
+          php -r '$x = @simplexml_load_file($argv[1]); exit($x && count($x->channel->item) >= 72 ? 0 : 1);' data/podcast-rss-fallback.xml
+          php -r '$c = json_decode(file_get_contents($argv[1]), true); $e = $c["episodes"] ?? []; $ids = array_column($e, "id"); exit(count($e) >= 72 && count(array_unique($ids)) === count($e) ? 0 : 1);' data/youtube-catalog-seed.json
+
+      - name: Kør regressionstest
+        run: bash tests/run-release.sh

@@ -149,11 +149,21 @@ function format_views($views) {
 function youtube_thumbnail_srcset($video_id, $primary_thumbnail = '') {
     if (!preg_match('/^[A-Za-z0-9_-]{11}$/', (string)$video_id)) return '';
     $base = 'https://i.ytimg.com/vi/' . rawurlencode($video_id) . '/';
-    $candidates = $base . 'mqdefault.jpg 320w, ' . $base . 'hqdefault.jpg 480w, ' . $base . 'sddefault.jpg 640w';
-    if ($primary_thumbnail === '' || str_contains($primary_thumbnail, '/maxresdefault.jpg')) {
+    $candidates = $base . 'mqdefault.jpg 320w, ' . $base . 'hqdefault.jpg 480w';
+    if ($primary_thumbnail === '' || strpos($primary_thumbnail, '/sddefault.jpg') !== false || strpos($primary_thumbnail, '/maxresdefault.jpg') !== false) {
+        $candidates .= ', ' . $base . 'sddefault.jpg 640w';
+    }
+    if ($primary_thumbnail === '' || strpos($primary_thumbnail, '/maxresdefault.jpg') !== false) {
         $candidates .= ', ' . $base . 'maxresdefault.jpg 1280w';
     }
     return $candidates;
+}
+function youtube_thumbnail_dimensions($thumbnail) {
+    if (strpos((string)$thumbnail, '/maxresdefault.jpg') !== false) return [1280, 720];
+    if (strpos((string)$thumbnail, '/sddefault.jpg') !== false) return [640, 480];
+    if (strpos((string)$thumbnail, '/hqdefault.jpg') !== false) return [480, 360];
+    if (strpos((string)$thumbnail, '/mqdefault.jpg') !== false) return [320, 180];
+    return [1280, 720];
 }
 function normalize_match_title($title) {
     $title = html_entity_decode((string)$title, ENT_QUOTES | ENT_HTML5, 'UTF-8');
@@ -389,6 +399,16 @@ function load_youtube_episode_catalog($catalog_files) {
 function save_youtube_episode_catalog($catalog_file, $channel_id, $episodes) {
     if (!$catalog_file) return false;
     ksort($episodes, SORT_NUMERIC);
+    if (is_file($catalog_file)) {
+        $existing = json_decode((string)@file_get_contents($catalog_file), true);
+        $existing_episodes = is_array($existing) && isset($existing['episodes']) && is_array($existing['episodes'])
+            ? $existing['episodes']
+            : null;
+        if ($existing_episodes !== null) {
+            ksort($existing_episodes, SORT_NUMERIC);
+            if (($existing['channel_id'] ?? '') === $channel_id && $existing_episodes == $episodes) return true;
+        }
+    }
     $payload = [
         'channel_id'  => $channel_id,
         'updated_at'  => date('c'),
@@ -453,15 +473,29 @@ function fetch_youtube_cached($feed_url, $ttl = 900, $catalog_files = []) {
         if (isset($media->group->community->statistics)) {
             $views = (int)$media->group->community->statistics->attributes()->views;
         }
-        $videos_by_id[$video_id] = [
+        $feed_thumbnail = '';
+        if (isset($media->group->thumbnail)) {
+            $thumbnail_attributes = $media->group->thumbnail->attributes();
+            $feed_thumbnail = trim((string)($thumbnail_attributes['url'] ?? ''));
+        }
+        $feed_video = [
             'id' => $video_id,
             'title' => (string)$entry->title,
             'title_key' => normalize_match_title((string)$entry->title),
             'date_iso' => $published_ts ? gmdate('Y-m-d', $published_ts) : '',
             'published_iso' => $published_ts ? gmdate('c', $published_ts) : '',
-            'thumbnail' => 'https://i.ytimg.com/vi/' . rawurlencode($video_id) . '/maxresdefault.jpg',
+            // Atom-feedets thumbnail eksisterer med sikkerhed. Højere opløsninger
+            // bruges kun, når det kuraterede katalog udtrykkeligt angiver dem.
+            'thumbnail' => $feed_thumbnail ?: ('https://i.ytimg.com/vi/' . rawurlencode($video_id) . '/hqdefault.jpg'),
             'views' => $views,
         ];
+        foreach ($episode_catalog as $catalog_video) {
+            if ($catalog_video['id'] === $video_id && !empty($catalog_video['thumbnail'])) {
+                $feed_video['thumbnail'] = $catalog_video['thumbnail'];
+                break;
+            }
+        }
+        $videos_by_id[$video_id] = $feed_video;
     }
     $videos = array_values($videos_by_id);
     usort($videos, function ($a, $b) {
@@ -514,10 +548,12 @@ if ($cover_image === '' && isset($rss->channel->image->url)) {
 // kataloget husker nye matches; Atom-feedet beriger de seneste med dato/views.
 $youtube_disabled = getenv('SAASKOBMAEND_DISABLE_YOUTUBE') === '1';
 $youtube_catalog_seed = dirname(__DIR__) . '/data/youtube-catalog-seed.json';
-$youtube_catalog_runtime = dirname(__DIR__) . '/data/youtube-catalog-runtime.json';
+$youtube_catalog_runtime = getenv('SAASKOBMAEND_YOUTUBE_RUNTIME_FILE') ?: (dirname(__DIR__) . '/data/youtube-catalog-runtime.json');
 $youtube_data = $youtube_disabled
     ? ['videos' => [], 'episodes' => []]
-    : fetch_youtube_cached($youtube_feed_url, 900, [$youtube_catalog_seed, $youtube_catalog_runtime]);
+    // Runtime bidrager med nye matches, men seed indlæses sidst og er dermed
+    // autoritativt for alle kuraterede episodenumre.
+    : fetch_youtube_cached($youtube_feed_url, 900, [$youtube_catalog_runtime, $youtube_catalog_seed]);
 $youtube_videos = $youtube_data['videos'];
 $youtube_episode_catalog = $youtube_data['episodes'];
 $youtube_by_id = [];
@@ -569,6 +605,9 @@ foreach ($rss->channel->item as $item) {
         $youtube = isset($youtube_by_id[$catalog_video['id']])
             ? array_merge($catalog_video, $youtube_by_id[$catalog_video['id']])
             : $catalog_video;
+        // Feedet må berige dato, titel og visninger, men aldrig overskrive en
+        // thumbnail, som bevidst er kurateret i seed/runtime-kataloget.
+        $youtube['thumbnail'] = $catalog_video['thumbnail'];
         $youtube_match_method = $catalog_video['match'] ?? 'catalog';
     }
 
@@ -656,20 +695,6 @@ foreach ($rss->channel->item as $item) {
     $idx++;
 }
 $total = count($episodes);
-
-// Fallback for ep_no (nyeste først -> højeste nr) og konsistent slug
-for ($i = 0; $i < $total; $i++) {
-    if ($episodes[$i]['ep_no'] === null) {
-        $episodes[$i]['ep_no'] = $total - $i;
-        $short_title = short_title_for_slug($episodes[$i]['title']);
-        $new_slug = dk_slugify($episodes[$i]['ep_no'] . '-' . $short_title);
-        if (!isset($slug_to_index[$new_slug])) {
-            unset($slug_to_index[$episodes[$i]['slug']]);
-            $episodes[$i]['slug'] = $new_slug;
-            $slug_to_index[$new_slug] = $i;
-        }
-    }
-}
 
 // Anvend evt. manuelle billed-overrides (efter episodenumre er endeligt sat)
 foreach ($episodes as &$ep_ref) {
@@ -872,6 +897,7 @@ $page_url = rtrim($site_url, '/') . '/';
 $og_image = $cover_image;
 $og_image_width = 1400;
 $og_image_height = 1400;
+$social_title = null;
 
 $single = null; $prev_link = null; $prev_label = null; $next_link = null; $next_label = null;
 
@@ -880,6 +906,7 @@ if ($is_single) {
     $single = $episodes[$i];
 
     $page_title = teaser($single['title'], 52) . " – SaaS Købmænd";
+    $social_title = $single['title'] . " – SaaS Købmænd";
     $page_description = teaser($single['content'], 160);
     $page_url = rtrim($site_url, '/') . '/episode/' . rawurlencode($single['slug']);
 
@@ -887,8 +914,7 @@ if ($is_single) {
         ? $single['youtube_thumbnail']
         : (!empty($single['image']) ? $single['image'] : $cover_image);
     if (!empty($single['youtube_thumbnail'])) {
-        $og_image_width = 1280;
-        $og_image_height = 720;
+        list($og_image_width, $og_image_height) = youtube_thumbnail_dimensions($single['youtube_thumbnail']);
     }
 
     $curr_no = (int)$single['ep_no'];
@@ -914,6 +940,7 @@ if ($is_single) {
     $page_description = "Ups! Den side findes ikke. Måske leder du efter en af vores podcast-episoder?";
     // $page_url bevares som forsiden (default) – en 404 skal ikke kanonisere til sig selv.
 }
+$social_title = $social_title ?: $page_title;
 
 // ===== JSON-LD (schema.org) =====
 $ld_base = rtrim($site_url, '/');
@@ -1120,11 +1147,13 @@ if ($ld_graph) {
     <meta property="og:site_name" content="<?= htmlspecialchars($site_name) ?>">
     <meta property="og:locale" content="da_DK">
     <meta property="og:url" content="<?= htmlspecialchars($page_url) ?>">
-    <meta property="og:title" content="<?= htmlspecialchars($page_title) ?>">
+    <meta property="og:title" content="<?= htmlspecialchars($social_title) ?>">
     <meta property="og:description" content="<?= htmlspecialchars($page_description) ?>">
     <?php if (!empty($og_image)): ?>
       <meta property="og:image" content="<?= htmlspecialchars($og_image) ?>">
-      <meta property="og:image:alt" content="<?= htmlspecialchars($page_title) ?>">
+      <meta property="og:image:secure_url" content="<?= htmlspecialchars($og_image) ?>">
+      <meta property="og:image:type" content="image/jpeg">
+      <meta property="og:image:alt" content="<?= htmlspecialchars($social_title) ?>">
       <meta property="og:image:width" content="<?= (int)$og_image_width ?>"><meta property="og:image:height" content="<?= (int)$og_image_height ?>">
     <?php endif; ?>
     <?php if ($is_single && $single): ?>
@@ -1137,10 +1166,10 @@ if ($ld_graph) {
 
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="<?= htmlspecialchars($page_title) ?>">
+    <meta name="twitter:title" content="<?= htmlspecialchars($social_title) ?>">
     <meta name="twitter:description" content="<?= htmlspecialchars($page_description) ?>">
     <?php if (!empty($og_image)): ?><meta name="twitter:image" content="<?= htmlspecialchars($og_image) ?>"><?php endif; ?>
-    <meta name="twitter:image:alt" content="<?= htmlspecialchars($page_title) ?>">
+    <meta name="twitter:image:alt" content="<?= htmlspecialchars($social_title) ?>">
 
     <?php if ($json_ld): ?>
     <script type="application/ld+json">
