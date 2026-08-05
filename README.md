@@ -4,8 +4,8 @@ Website for podcasten **SaaS Købmænd**. Det lever på `saaskøbmænd.dk` (puny
 `xn--saaskbmnd-m3a9q.dk`) og er hostet på [Simply.com](https://www.simply.com).
 
 Runtime-kravet er **PHP 7.4 eller nyere** med `mbstring`, `SimpleXML` og `DOM`.
-Pull requests testes eksplicit på PHP 7.4, så nyere PHP-funktioner ikke utilsigtet
-kan afkorte outputtet på produktion.
+Pull requests testes på både PHP 7.4 og 8.4, så nyere PHP-funktioner ikke
+utilsigtet kan afkorte outputtet på produktion, og en senere opgradering er sikker.
 
 Sitet er et enkelt PHP-script uden database eller CMS: episoder hentes fra
 podcastens RSS-feed, caches og renderes til HTML.
@@ -55,8 +55,8 @@ afsluttende slash redirectes også til formen uden slash.
   et verificeret 72→72-match mellem alle nuværende RSS-episoder og deres
   hovedvideoer. Otte klip/uddrag på kanalen er bevidst fravalgt. Nye episoder
   matches automatisk på permanent katalog, eksakt titel, episodenummer og til
-  sidst dato ±2 dage kombineret med titellighed. Accepterede matches gemmes i
-  `data/youtube-catalog-runtime.json`, som ikke overskrives ved deployment.
+  sidst dato ±2 dage kombineret med titellighed. Kun nye, ikke-seedede matches
+  gemmes i `data/youtube-catalog-runtime.json`, som ikke overskrives ved deployment.
 - Hver side har **JSON-LD schema.org**: `PodcastSeries` på forsiden,
   `PodcastEpisode` + `AudioObject` + betinget `VideoObject` + `BreadcrumbList`
   på episode-sider, og `ProfilePage` + `Person` på værtsprofilerne.
@@ -122,12 +122,13 @@ Push til `main` → GitHub Actions uploader automatisk til Simply via FTPS
 - `FTP_USERNAME` – FTP-brugernavn
 - `FTP_PASSWORD` – FTP-kodeord
 
-Repoets rod spejles til FTP-roden. `.git`, `.github`, `.context` og `.md`-filer
-uploades ikke. Workflowet kan også køres manuelt fra **Actions**-fanen.
+Repoets rod spejles til FTP-roden. `.git`, `.github`, `.context`, `tests` og
+`README.md` uploades ikke. Workflowet kan også køres manuelt fra **Actions**-fanen.
 
 Den permanente regressionstest kan køres lokalt med `bash tests/run-release.sh`.
 Den kontrollerer bl.a. komplet HTML-output, alle RSS-episoder, redirects,
-værtssider, sitemap, katalog-prioritet og Open Graph-data for hver episodeside.
+værtssider, sitemap, episode-specifikke Open Graph-data og katalog-prioritet.
+En syntetisk episode 73 tester desuden Atom-match, thumbnailbeskyttelse og runtime.
 
 ## Analytics
 
