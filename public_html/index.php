@@ -165,6 +165,18 @@ function youtube_thumbnail_dimensions($thumbnail) {
     if (strpos((string)$thumbnail, '/mqdefault.jpg') !== false) return [320, 180];
     return [1280, 720];
 }
+function image_mime_type_from_url($url) {
+    $path = parse_url((string)$url, PHP_URL_PATH);
+    $extension = strtolower(pathinfo((string)$path, PATHINFO_EXTENSION));
+    $types = [
+        'jpg' => 'image/jpeg',
+        'jpeg' => 'image/jpeg',
+        'png' => 'image/png',
+        'webp' => 'image/webp',
+        'gif' => 'image/gif',
+    ];
+    return $types[$extension] ?? null;
+}
 function normalize_match_title($title) {
     $title = html_entity_decode((string)$title, ENT_QUOTES | ENT_HTML5, 'UTF-8');
     $title = mb_strtolower($title, 'UTF-8');
@@ -322,7 +334,8 @@ function save_atomic_file($path, $contents) {
 // Hent RSS med to lag cache: hurtig system-cache og en permanent, deployet
 // snapshot-fil. Sitet virker derfor også efter genstart, hvis Anchor er nede.
 function fetch_rss_cached($rss_url, $ttl = 900, $fallback_file = null) {
-    $cache_file = sys_get_temp_dir() . '/saaskobmaend_rss_' . md5($rss_url) . '.xml';
+    $cache_namespace = (string)getenv('SAASKOBMAEND_CACHE_NAMESPACE');
+    $cache_file = sys_get_temp_dir() . '/saaskobmaend_rss_' . md5($rss_url . '|' . $cache_namespace) . '.xml';
 
     // 1) Frisk cache? Brug den.
     if (is_file($cache_file) && (time() - (int)@filemtime($cache_file) < $ttl)) {
@@ -421,8 +434,10 @@ function save_youtube_episode_catalog($catalog_file, $channel_id, $episodes) {
 // YouTubes offentlige Atom-feed kræver ingen API-nøgle. Det indeholder de
 // seneste uploads; det permanente katalog gør, at en video aldrig glemmes igen.
 function fetch_youtube_cached($feed_url, $ttl = 900, $catalog_files = []) {
-    $cache_file = sys_get_temp_dir() . '/saaskobmaend_youtube_' . md5($feed_url) . '.xml';
-    $history_file = sys_get_temp_dir() . '/saaskobmaend_youtube_history_' . md5($feed_url) . '.json';
+    $cache_namespace = (string)getenv('SAASKOBMAEND_CACHE_NAMESPACE');
+    $cache_key = md5($feed_url . '|' . $cache_namespace);
+    $cache_file = sys_get_temp_dir() . '/saaskobmaend_youtube_' . $cache_key . '.xml';
+    $history_file = sys_get_temp_dir() . '/saaskobmaend_youtube_history_' . $cache_key . '.json';
     $xml = false;
     $videos_by_id = [];
 
@@ -529,7 +544,7 @@ function get_episode_image_from_item($item, $fallback = '') {
 }
 
 // ===== Hent RSS (med cache) =====
-$rss_snapshot_file = dirname(__DIR__) . '/data/podcast-rss-fallback.xml';
+$rss_snapshot_file = getenv('SAASKOBMAEND_RSS_SNAPSHOT_FILE') ?: (dirname(__DIR__) . '/data/podcast-rss-fallback.xml');
 $rss = fetch_rss_cached($rss_url, 900, $rss_snapshot_file); // cache i 15 min
 if (!$rss) { http_response_code(500); die('<h2>Kunne ikke hente podcast-feedet.</h2>'); }
 
@@ -549,6 +564,7 @@ if ($cover_image === '' && isset($rss->channel->image->url)) {
 $youtube_disabled = getenv('SAASKOBMAEND_DISABLE_YOUTUBE') === '1';
 $youtube_catalog_seed = dirname(__DIR__) . '/data/youtube-catalog-seed.json';
 $youtube_catalog_runtime = getenv('SAASKOBMAEND_YOUTUBE_RUNTIME_FILE') ?: (dirname(__DIR__) . '/data/youtube-catalog-runtime.json');
+$youtube_seed_catalog = $youtube_disabled ? [] : load_youtube_episode_catalog([$youtube_catalog_seed]);
 $youtube_data = $youtube_disabled
     ? ['videos' => [], 'episodes' => []]
     // Runtime bidrager med nye matches, men seed indlæses sidst og er dermed
@@ -707,7 +723,10 @@ unset($ep_ref);
 // Gem den samlede, berigede tabel. Hvis webhotellet er read-only, fortsætter
 // seed-kataloget og temp-cachen uændret med at virke.
 if (!$youtube_disabled) {
-    save_youtube_episode_catalog($youtube_catalog_runtime, $youtube_channel_id, $youtube_episode_catalog);
+    // Runtime-filen ejer kun automatisk fundne episoder. Seed-data gemmes ikke
+    // som kopier, så en bevidst sletning fra seed ikke kan genopstå fra runtime.
+    $youtube_runtime_only_catalog = array_diff_key($youtube_episode_catalog, $youtube_seed_catalog);
+    save_youtube_episode_catalog($youtube_catalog_runtime, $youtube_channel_id, $youtube_runtime_only_catalog);
 }
 
 $popular_episodes = array_values(array_filter($episodes, function ($ep) {
@@ -941,6 +960,7 @@ if ($is_single) {
     // $page_url bevares som forsiden (default) – en 404 skal ikke kanonisere til sig selv.
 }
 $social_title = $social_title ?: $page_title;
+$og_image_type = image_mime_type_from_url($og_image);
 
 // ===== JSON-LD (schema.org) =====
 $ld_base = rtrim($site_url, '/');
@@ -1152,7 +1172,7 @@ if ($ld_graph) {
     <?php if (!empty($og_image)): ?>
       <meta property="og:image" content="<?= htmlspecialchars($og_image) ?>">
       <meta property="og:image:secure_url" content="<?= htmlspecialchars($og_image) ?>">
-      <meta property="og:image:type" content="image/jpeg">
+      <?php if ($og_image_type): ?><meta property="og:image:type" content="<?= htmlspecialchars($og_image_type) ?>"><?php endif; ?>
       <meta property="og:image:alt" content="<?= htmlspecialchars($social_title) ?>">
       <meta property="og:image:width" content="<?= (int)$og_image_width ?>"><meta property="og:image:height" content="<?= (int)$og_image_height ?>">
     <?php endif; ?>

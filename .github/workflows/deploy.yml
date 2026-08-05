@@ -71,6 +71,7 @@ jobs:
             **/.git*/**
             .github/**
             .context/**
+            tests/**
             **/.DS_Store
             README.md
             public_html/index.html-old
