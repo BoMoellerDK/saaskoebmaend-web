@@ -1362,7 +1362,7 @@ if ($ld_graph) {
         }
     </style>
     <?php endif; ?>
-    <link rel="stylesheet" href="/assets/site-v2.css?v=2">
+    <link rel="stylesheet" href="/assets/site-v2.css?v=3">
 
 <!-- OctoReports Tracking -->
 <script>!function(k,u){function E(s){return encodeURIComponent(s||"")}var q=new URLSearchParams(location.search),G=n=>q.get(n)||"",D=/iPad|Tablet|Android(?!.*Mobile)/i.test(navigator.userAgent)?2:/Mobi|Android.+Mobile|iPhone/i.test(navigator.userAgent)?1:3,N=(performance.getEntriesByType&&performance.getEntriesByType("navigation")[0])||{},P=location.pathname+location.search;P.length>1800&&(P=P.slice(0,1790)+"…");var Q="?k="+E(k)+"&h="+E(location.hostname)+"&p="+E(P)+"&r="+E(document.referrer||"")+"&pt="+E((document.title||"").slice(0,300))+"&us="+E(G("utm_source"))+"&um="+E(G("utm_medium"))+"&uc="+E(G("utm_campaign"))+"&ut="+E(G("utm_term"))+"&uu="+E(G("utm_content"))+"&dv="+D+"&tf="+(N.responseStart&&N.requestStart?Math.round(N.responseStart-N.requestStart):"")+"&dc="+(N.domContentLoadedEventEnd?Math.round(N.domContentLoadedEventEnd-(N.startTime||0)):"")+"&ld="+(N.loadEventEnd?Math.round(N.loadEventEnd-(N.startTime||0)):"")+"&t="+Date.now();(new Image).src=u+Q}("26f4922196b86eddde8fc78b553fd927457448a8","https://track.octoreports.com/track.php");</script>
