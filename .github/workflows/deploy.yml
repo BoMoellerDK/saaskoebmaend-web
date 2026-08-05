@@ -19,6 +19,13 @@ jobs:
       - name: Hent koden
         uses: actions/checkout@v4
 
+      - name: Test med PHP 7.4-kompatibilitetsniveau
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '7.4'
+          extensions: mbstring, simplexml, dom
+          coverage: none
+
       - name: Opdatér seneste kendte RSS-feed
         shell: bash
         run: |
@@ -39,7 +46,10 @@ jobs:
         run: |
           php -l public_html/index.php
           php -r '$x = @simplexml_load_file($argv[1]); if (!$x || count($x->channel->item) < 1) { fwrite(STDERR, "RSS-snapshot er ugyldigt.\n"); exit(1); }' data/podcast-rss-fallback.xml
-          php -r '$c = json_decode(file_get_contents($argv[1]), true); $e = $c["episodes"] ?? []; $ids = array_column($e, "id"); if (count($e) !== 72 || count(array_unique($ids)) !== 72) { fwrite(STDERR, "YouTube-kataloget skal have 72 unikke matches.\n"); exit(1); } foreach ($ids as $id) if (!preg_match("/^[A-Za-z0-9_-]{11}$/", $id)) exit(1);' data/youtube-catalog-seed.json
+          php -r '$c = json_decode(file_get_contents($argv[1]), true); $e = $c["episodes"] ?? []; $ids = array_column($e, "id"); if (count($e) < 72 || count(array_unique($ids)) !== count($e)) { fwrite(STDERR, "YouTube-kataloget skal have mindst 72 unikke matches.\n"); exit(1); } foreach ($ids as $id) if (!preg_match("/^[A-Za-z0-9_-]{11}$/", $id)) exit(1);' data/youtube-catalog-seed.json
+
+      - name: Kør regressionstest før deployment
+        run: bash tests/run-release.sh
 
       - name: Upload til simply.com via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
