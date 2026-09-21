@@ -164,7 +164,11 @@ foreach ($episode_urls as $episode_url) {
     $rendered_og_images[] = $og_image;
 }
 check(count(array_unique($rendered_og_titles)) === $expected_episode_count, 'Episodesiderne har ikke unikke OG-titler');
-check(count(array_unique($rendered_og_images)) === $expected_episode_count, 'Episodesiderne har ikke unikke OG-images');
+$expected_unique_images = count(array_unique(array_column($expected_episodes, 'image')));
+check(
+    count(array_unique($rendered_og_images)) === $expected_unique_images,
+    'Episodesidernes antal unikke OG-images svarer ikke til katalog og RSS-fallbacks'
+);
 
 if ($runtime_file && is_file($runtime_file)) {
     $after_first_request = file_get_contents($runtime_file);
