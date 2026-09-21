@@ -15,6 +15,7 @@ podcastens RSS-feed, caches og renderes til HTML.
 - **`public_html/index.php`** er hele sitet. Det:
   - henter RSS-feedet (`https://anchor.fm/s/10eb99934/podcast/rss`),
   - henter YouTubes offentlige kanal-feed og matcher nye videoer med episoder på titel/dato,
+    med kanalens videoside som automatisk fallback hvis feedet er nede,
   - bygger en liste af episoder med titel, dato, varighed, beskrivelse, lyd-URL
     og cover-billede samt eventuel YouTube-video, thumbnail og visningstal,
   - laver pæne, æ/ø/å-fri "slugs" til hver episode (fx `63-den-bedste-til-...`),
@@ -57,6 +58,8 @@ afsluttende slash redirectes også til formen uden slash.
   matches automatisk på permanent katalog, eksakt titel, episodenummer og til
   sidst dato ±2 dage kombineret med titellighed. Kun nye, ikke-seedede matches
   gemmes i `data/youtube-catalog-runtime.json`, som ikke overskrives ved deployment.
+  Hvis YouTubes Atom-feed fejler, læses de seneste offentlige uploads automatisk
+  fra kanalens videoside uden API-nøgle, hvorefter samme matching og lagring bruges.
 - Hver side har **JSON-LD schema.org**: `PodcastSeries` på forsiden,
   `PodcastEpisode` + `AudioObject` + betinget `VideoObject` + `BreadcrumbList`
   på episode-sider, og `ProfilePage` + `Person` på værtsprofilerne.
@@ -128,7 +131,8 @@ Repoets rod spejles til FTP-roden. `.git`, `.github`, `.context`, `tests` og
 Den permanente regressionstest kan køres lokalt med `bash tests/run-release.sh`.
 Den kontrollerer bl.a. komplet HTML-output, alle RSS-episoder, redirects,
 værtssider, sitemap, episode-specifikke Open Graph-data og katalog-prioritet.
-En syntetisk episode 73 tester desuden Atom-match, thumbnailbeskyttelse og runtime.
+En syntetisk episode 73 tester desuden Atom-match, kanalside-fallback,
+thumbnailbeskyttelse og runtime.
 
 ## Analytics
 
