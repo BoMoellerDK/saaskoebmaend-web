@@ -8,6 +8,9 @@ rss_snapshot_file="$test_temp_dir/saaskoebmaend-rss-snapshot-test.xml"
 synthetic_runtime_file="$test_temp_dir/saaskoebmaend-youtube-runtime-synthetic.json"
 synthetic_server_log="$test_temp_dir/saaskoebmaend-php-server-synthetic.log"
 synthetic_rss_snapshot_file="$test_temp_dir/saaskoebmaend-rss-snapshot-synthetic.xml"
+fallback_runtime_file="$test_temp_dir/saaskoebmaend-youtube-runtime-fallback.json"
+fallback_server_log="$test_temp_dir/saaskoebmaend-php-server-fallback.log"
+fallback_rss_snapshot_file="$test_temp_dir/saaskoebmaend-rss-snapshot-fallback.xml"
 fixture_root="$PWD/tests/fixtures"
 server_pids=()
 
@@ -38,6 +41,7 @@ wait_for_server() {
 
 SAASKOBMAEND_YOUTUBE_RUNTIME_FILE="$runtime_file" \
 SAASKOBMAEND_YOUTUBE_FEED_URL='file:///dev/null' \
+SAASKOBMAEND_YOUTUBE_PAGE_URL='file:///dev/null' \
 SAASKOBMAEND_RSS_URL="file://$PWD/data/podcast-rss-fallback.xml" \
 SAASKOBMAEND_RSS_SNAPSHOT_FILE="$rss_snapshot_file" \
 SAASKOBMAEND_CACHE_NAMESPACE="release-test-$$" \
@@ -60,4 +64,22 @@ wait_for_server 'http://127.0.0.1:8878/' "$synthetic_server_log"
 
 SAASKOBMAEND_TEST_BASE_URL='http://127.0.0.1:8878' \
 SAASKOBMAEND_YOUTUBE_RUNTIME_FILE="$synthetic_runtime_file" \
+php tests/synthetic-youtube.php
+
+SAASKOBMAEND_RSS_URL="file://$fixture_root/synthetic-rss.xml" \
+SAASKOBMAEND_RSS_SNAPSHOT_FILE="$fallback_rss_snapshot_file" \
+SAASKOBMAEND_YOUTUBE_FEED_URL='file:///dev/null' \
+SAASKOBMAEND_YOUTUBE_PAGE_URL="file://$fixture_root/synthetic-youtube-page.html" \
+SAASKOBMAEND_YOUTUBE_RUNTIME_FILE="$fallback_runtime_file" \
+SAASKOBMAEND_CACHE_NAMESPACE="fallback-test-$$" \
+php -S 127.0.0.1:8879 -t public_html tests/router.php >"$fallback_server_log" 2>&1 &
+fallback_server_pid=$!
+server_pids+=("$fallback_server_pid")
+wait_for_server 'http://127.0.0.1:8879/' "$fallback_server_log"
+
+SAASKOBMAEND_TEST_BASE_URL='http://127.0.0.1:8879' \
+SAASKOBMAEND_YOUTUBE_RUNTIME_FILE="$fallback_runtime_file" \
+SAASKOBMAEND_EXPECTED_VIDEO_ID='PgFallback1' \
+SAASKOBMAEND_EXPECTED_YOUTUBE_SOURCE='kanalside-fallbacken' \
+SAASKOBMAEND_EXPECTED_YOUTUBE_VIEWS='1200' \
 php tests/synthetic-youtube.php

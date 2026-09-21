@@ -7,6 +7,8 @@ $short_url = 'https://saaskoebmaend.dk';      // ASCII-domæne til korte del-lin
 $youtube_channel_id = 'UCEPkljgNMsbW3lNYZ-j6VHw';
 $youtube_feed_url_default = 'https://www.youtube.com/feeds/videos.xml?channel_id=' . $youtube_channel_id;
 $youtube_feed_url = getenv('SAASKOBMAEND_YOUTUBE_FEED_URL') ?: $youtube_feed_url_default;
+$youtube_page_url_default = 'https://www.youtube.com/channel/' . $youtube_channel_id . '/videos?hl=en&gl=US';
+$youtube_page_url = getenv('SAASKOBMAEND_YOUTUBE_PAGE_URL') ?: $youtube_page_url_default;
 
 // Valgfri: manuelt cover art pr. episode (fx et Spotify-cover).
 // OBS: Spotifys eget custom episode-cover kommer IKKE med i RSS-feedet – feedet
@@ -431,14 +433,185 @@ function save_youtube_episode_catalog($catalog_file, $channel_id, $episodes) {
     return $json !== false ? save_atomic_file($catalog_file, $json . "\n") : false;
 }
 
-// YouTubes offentlige Atom-feed kræver ingen API-nøgle. Det indeholder de
-// seneste uploads; det permanente katalog gør, at en video aldrig glemmes igen.
-function fetch_youtube_cached($feed_url, $ttl = 900, $catalog_files = []) {
+function youtube_text_value($value) {
+    if (!is_array($value)) return '';
+    if (isset($value['simpleText'])) return trim((string)$value['simpleText']);
+    if (isset($value['content'])) return trim((string)$value['content']);
+    if (!empty($value['runs']) && is_array($value['runs'])) {
+        $parts = [];
+        foreach ($value['runs'] as $run) {
+            if (is_array($run) && isset($run['text'])) $parts[] = (string)$run['text'];
+        }
+        return trim(implode('', $parts));
+    }
+    return '';
+}
+
+// YouTubes kanal-side indeholder data som JSON i ytInitialData. Udtræk JSON-
+// objektet med en lille balanceret parser i stedet for en skrøbelig regex, da
+// titler og metadata lovligt kan indeholde både klammer og citationstegn.
+function youtube_initial_data_from_html($html) {
+    $markers = ['var ytInitialData = ', 'window["ytInitialData"] = '];
+    foreach ($markers as $marker) {
+        $marker_pos = strpos((string)$html, $marker);
+        if ($marker_pos === false) continue;
+        $start = strpos((string)$html, '{', $marker_pos + strlen($marker));
+        if ($start === false) continue;
+
+        $depth = 0;
+        $in_string = false;
+        $escaped = false;
+        $length = strlen((string)$html);
+        for ($i = $start; $i < $length; $i++) {
+            $char = $html[$i];
+            if ($in_string) {
+                if ($escaped) $escaped = false;
+                elseif ($char === '\\') $escaped = true;
+                elseif ($char === '"') $in_string = false;
+                continue;
+            }
+            if ($char === '"') $in_string = true;
+            elseif ($char === '{') $depth++;
+            elseif ($char === '}' && --$depth === 0) {
+                $data = json_decode(substr($html, $start, $i - $start + 1), true);
+                if (is_array($data)) return $data;
+                break;
+            }
+        }
+    }
+    return null;
+}
+
+function youtube_views_from_text($text) {
+    $text = strtolower(str_replace(["\xc2\xa0", ' '], ['', ''], trim((string)$text)));
+    if (!preg_match('/([0-9][0-9.,]*)\s*([kmb]?)views?/', $text, $match)) return 0;
+    $number = $match[1];
+    $suffix = $match[2];
+    if ($suffix !== '') {
+        $value = (float)str_replace(',', '.', $number);
+        $multipliers = ['k' => 1000, 'm' => 1000000, 'b' => 1000000000];
+        return (int)round($value * $multipliers[$suffix]);
+    }
+    return (int)preg_replace('/[^0-9]/', '', $number);
+}
+
+function youtube_relative_timestamp($text) {
+    $text = strtolower(trim((string)$text));
+    if ($text === 'today') return time();
+    if ($text === 'yesterday') return strtotime('-1 day');
+    if (!preg_match('/(?:streamed|premiered)?\s*(\d+)\s+(minute|hour|day|week|month|year)s?\s+ago/', $text, $match)) return null;
+    $timestamp = strtotime('-' . (int)$match[1] . ' ' . $match[2]);
+    return $timestamp === false ? null : $timestamp;
+}
+
+function youtube_video_from_page_renderer($renderer) {
+    if (!is_array($renderer)) return null;
+    $video_id = trim((string)($renderer['videoId'] ?? ''));
+    if (!preg_match('/^[A-Za-z0-9_-]{11}$/', $video_id)) return null;
+    $title = youtube_text_value($renderer['title'] ?? []);
+    if ($title === '') return null;
+    $published_text = youtube_text_value($renderer['publishedTimeText'] ?? []);
+    $published_ts = youtube_relative_timestamp($published_text);
+    return [
+        'id' => $video_id,
+        'title' => $title,
+        'title_key' => normalize_match_title($title),
+        'date_iso' => $published_ts ? gmdate('Y-m-d', $published_ts) : '',
+        // Kanalsiden viser relative tider. Gem ved midnat, så samme "1 hour
+        // ago" ikke omskriver runtime-kataloget ved hvert request.
+        'published_iso' => $published_ts ? gmdate('Y-m-d\T00:00:00\Z', $published_ts) : '',
+        'thumbnail' => 'https://i.ytimg.com/vi/' . rawurlencode($video_id) . '/hqdefault.jpg',
+        'views' => youtube_views_from_text(youtube_text_value($renderer['viewCountText'] ?? [])),
+    ];
+}
+
+function youtube_video_from_page_lockup($lockup) {
+    if (!is_array($lockup)) return null;
+    $video_id = trim((string)($lockup['contentId'] ?? ''));
+    if (!preg_match('/^[A-Za-z0-9_-]{11}$/', $video_id)) return null;
+    $metadata = $lockup['metadata']['lockupMetadataViewModel'] ?? [];
+    $title = youtube_text_value($metadata['title'] ?? []);
+    if ($title === '') return null;
+
+    $views = 0;
+    $published_ts = null;
+    $rows = $metadata['metadata']['contentMetadataViewModel']['metadataRows'] ?? [];
+    foreach ($rows as $row) {
+        foreach (($row['metadataParts'] ?? []) as $part) {
+            $text = youtube_text_value($part['text'] ?? []);
+            if ($views === 0) $views = youtube_views_from_text($text);
+            if ($published_ts === null) $published_ts = youtube_relative_timestamp($text);
+        }
+    }
+    return [
+        'id' => $video_id,
+        'title' => $title,
+        'title_key' => normalize_match_title($title),
+        'date_iso' => $published_ts ? gmdate('Y-m-d', $published_ts) : '',
+        'published_iso' => $published_ts ? gmdate('Y-m-d\T00:00:00\Z', $published_ts) : '',
+        'thumbnail' => 'https://i.ytimg.com/vi/' . rawurlencode($video_id) . '/hqdefault.jpg',
+        'views' => $views,
+    ];
+}
+
+function youtube_videos_from_page_html($html) {
+    $data = youtube_initial_data_from_html($html);
+    if (!is_array($data)) return [];
+    $videos = [];
+    $walk = function ($value) use (&$walk, &$videos) {
+        if (!is_array($value)) return;
+        if (isset($value['videoRenderer'])) {
+            $video = youtube_video_from_page_renderer($value['videoRenderer']);
+            if ($video) $videos[$video['id']] = $video;
+        }
+        if (isset($value['lockupViewModel'])) {
+            $video = youtube_video_from_page_lockup($value['lockupViewModel']);
+            if ($video) $videos[$video['id']] = $video;
+        }
+        foreach ($value as $child) if (is_array($child)) $walk($child);
+    };
+    $walk($data);
+    return array_values($videos);
+}
+
+function fetch_youtube_page_cached($page_url, $ttl = 900) {
+    if (!$page_url) return [];
+    $cache_namespace = (string)getenv('SAASKOBMAEND_CACHE_NAMESPACE');
+    $cache_file = sys_get_temp_dir() . '/saaskobmaend_youtube_page_' . md5($page_url . '|' . $cache_namespace) . '.html';
+    $html = false;
+    if (is_file($cache_file) && (time() - (int)@filemtime($cache_file) < $ttl)) {
+        $html = @file_get_contents($cache_file);
+    }
+    if ($html === false) {
+        $ctx = stream_context_create([
+            'http' => [
+                'timeout' => 8,
+                'user_agent' => 'saaskobmaend-web/1.0',
+                'header' => "Accept-Language: en-US,en;q=0.9\r\n",
+            ],
+            'https' => ['timeout' => 8],
+        ]);
+        $fresh = @file_get_contents($page_url, false, $ctx);
+        if ($fresh !== false && youtube_videos_from_page_html($fresh)) {
+            $html = $fresh;
+            @file_put_contents($cache_file, $fresh, LOCK_EX);
+        } elseif (is_file($cache_file)) {
+            $html = @file_get_contents($cache_file);
+        }
+    }
+    return $html === false ? [] : youtube_videos_from_page_html($html);
+}
+
+// YouTubes offentlige Atom-feed er førstevalg og kræver ingen API-nøgle. Hvis
+// feedet er utilgængeligt, læses de samme offentlige uploads fra kanalens
+// videoside. Det permanente katalog gør, at et fundet match aldrig glemmes.
+function fetch_youtube_cached($feed_url, $ttl = 900, $catalog_files = [], $page_url = null) {
     $cache_namespace = (string)getenv('SAASKOBMAEND_CACHE_NAMESPACE');
     $cache_key = md5($feed_url . '|' . $cache_namespace);
     $cache_file = sys_get_temp_dir() . '/saaskobmaend_youtube_' . $cache_key . '.xml';
     $history_file = sys_get_temp_dir() . '/saaskobmaend_youtube_history_' . $cache_key . '.json';
     $xml = false;
+    $feed_fetch_failed = false;
     $videos_by_id = [];
 
     $episode_catalog = load_youtube_episode_catalog($catalog_files);
@@ -471,46 +644,69 @@ function fetch_youtube_cached($feed_url, $ttl = 900, $catalog_files = []) {
             $xml = $fresh;
             @file_put_contents($cache_file, $fresh, LOCK_EX);
         } elseif (is_file($cache_file)) {
+            $feed_fetch_failed = true;
             $xml = @file_get_contents($cache_file);
+        } else {
+            $feed_fetch_failed = true;
         }
     }
-    if ($xml === false) return ['videos' => array_values($videos_by_id), 'episodes' => $episode_catalog];
-
-    $feed = @simplexml_load_string($xml);
-    if (!$feed) return ['videos' => array_values($videos_by_id), 'episodes' => $episode_catalog];
-    foreach ($feed->entry as $entry) {
-        $yt = $entry->children('http://www.youtube.com/xml/schemas/2015');
-        $media = $entry->children('http://search.yahoo.com/mrss/');
-        $video_id = trim((string)$yt->videoId);
-        if ($video_id === '') continue;
-        $published_ts = strtotime((string)$entry->published);
-        $views = 0;
-        if (isset($media->group->community->statistics)) {
-            $views = (int)$media->group->community->statistics->attributes()->views;
-        }
-        $feed_thumbnail = '';
-        if (isset($media->group->thumbnail)) {
-            $thumbnail_attributes = $media->group->thumbnail->attributes();
-            $feed_thumbnail = trim((string)($thumbnail_attributes['url'] ?? ''));
-        }
-        $feed_video = [
-            'id' => $video_id,
-            'title' => (string)$entry->title,
-            'title_key' => normalize_match_title((string)$entry->title),
-            'date_iso' => $published_ts ? gmdate('Y-m-d', $published_ts) : '',
-            'published_iso' => $published_ts ? gmdate('c', $published_ts) : '',
-            // Atom-feedets thumbnail eksisterer med sikkerhed. Højere opløsninger
-            // bruges kun, når det kuraterede katalog udtrykkeligt angiver dem.
-            'thumbnail' => $feed_thumbnail ?: ('https://i.ytimg.com/vi/' . rawurlencode($video_id) . '/hqdefault.jpg'),
-            'views' => $views,
-        ];
-        foreach ($episode_catalog as $catalog_video) {
-            if ($catalog_video['id'] === $video_id && !empty($catalog_video['thumbnail'])) {
-                $feed_video['thumbnail'] = $catalog_video['thumbnail'];
-                break;
+    $feed = $xml !== false ? @simplexml_load_string($xml) : false;
+    if ($feed) {
+        foreach ($feed->entry as $entry) {
+            $yt = $entry->children('http://www.youtube.com/xml/schemas/2015');
+            $media = $entry->children('http://search.yahoo.com/mrss/');
+            $video_id = trim((string)$yt->videoId);
+            if ($video_id === '') continue;
+            $published_ts = strtotime((string)$entry->published);
+            $views = 0;
+            if (isset($media->group->community->statistics)) {
+                $views = (int)$media->group->community->statistics->attributes()->views;
             }
+            $feed_thumbnail = '';
+            if (isset($media->group->thumbnail)) {
+                $thumbnail_attributes = $media->group->thumbnail->attributes();
+                $feed_thumbnail = trim((string)($thumbnail_attributes['url'] ?? ''));
+            }
+            $feed_video = [
+                'id' => $video_id,
+                'title' => (string)$entry->title,
+                'title_key' => normalize_match_title((string)$entry->title),
+                'date_iso' => $published_ts ? gmdate('Y-m-d', $published_ts) : '',
+                'published_iso' => $published_ts ? gmdate('c', $published_ts) : '',
+                // Atom-feedets thumbnail eksisterer med sikkerhed. Højere opløsninger
+                // bruges kun, når det kuraterede katalog udtrykkeligt angiver dem.
+                'thumbnail' => $feed_thumbnail ?: ('https://i.ytimg.com/vi/' . rawurlencode($video_id) . '/hqdefault.jpg'),
+                'views' => $views,
+            ];
+            foreach ($episode_catalog as $catalog_video) {
+                if ($catalog_video['id'] === $video_id && !empty($catalog_video['thumbnail'])) {
+                    $feed_video['thumbnail'] = $catalog_video['thumbnail'];
+                    break;
+                }
+            }
+            $videos_by_id[$video_id] = $feed_video;
         }
-        $videos_by_id[$video_id] = $feed_video;
+    } else {
+        $feed_fetch_failed = true;
+    }
+
+    if ($feed_fetch_failed && $page_url) {
+        foreach (fetch_youtube_page_cached($page_url, $ttl) as $page_video) {
+            $video_id = $page_video['id'];
+            if (!isset($videos_by_id[$video_id])) {
+                $videos_by_id[$video_id] = $page_video;
+                continue;
+            }
+            // Opdatér titel/visninger fra siden, men bevar præcis Atom-dato og
+            // en eventuelt kurateret thumbnail fra kataloget.
+            $existing_video = $videos_by_id[$video_id];
+            $merged_video = array_merge($existing_video, $page_video);
+            foreach (['date_iso', 'published_iso'] as $date_key) {
+                if (empty($page_video[$date_key])) $merged_video[$date_key] = $existing_video[$date_key] ?? '';
+            }
+            if (!empty($existing_video['thumbnail'])) $merged_video['thumbnail'] = $existing_video['thumbnail'];
+            $videos_by_id[$video_id] = $merged_video;
+        }
     }
     $videos = array_values($videos_by_id);
     usort($videos, function ($a, $b) {
@@ -569,7 +765,7 @@ $youtube_data = $youtube_disabled
     ? ['videos' => [], 'episodes' => []]
     // Runtime bidrager med nye matches, men seed indlæses sidst og er dermed
     // autoritativt for alle kuraterede episodenumre.
-    : fetch_youtube_cached($youtube_feed_url, 900, [$youtube_catalog_runtime, $youtube_catalog_seed]);
+    : fetch_youtube_cached($youtube_feed_url, 900, [$youtube_catalog_runtime, $youtube_catalog_seed], $youtube_page_url);
 $youtube_videos = $youtube_data['videos'];
 $youtube_episode_catalog = $youtube_data['episodes'];
 $youtube_by_id = [];
@@ -604,7 +800,9 @@ foreach ($rss->channel->item as $item) {
     $content_encoded = isset($content_ns->encoded) ? (string)$content_ns->encoded : '';
 
     $audio_url = get_audio_url_from_item($item);
-    $ep_no = extract_episode_number_from_title($title);
+    $item_itunes = $item->children('itunes', true);
+    $ep_no = isset($item_itunes->episode) ? (int)$item_itunes->episode : null;
+    $ep_no = $ep_no ?: extract_episode_number_from_title($title);
     $ep_no = $ep_no ?: ($rss_item_count - $idx);
 
     $duration_seconds = parse_duration_seconds($item);
