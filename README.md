@@ -58,6 +58,8 @@ afsluttende slash redirectes også til formen uden slash.
   matches automatisk på permanent katalog, eksakt titel, episodenummer og til
   sidst dato ±2 dage kombineret med titellighed. Kun nye, ikke-seedede matches
   gemmes i `data/youtube-catalog-runtime.json`, som ikke overskrives ved deployment.
+  Ved et nyt match tjekkes én gang, om YouTube har `maxresdefault` (1280×720) eller
+  `sddefault`, så nye afsnit ikke ender med den pixelerede `hqdefault` fra feedet.
   Hvis YouTubes Atom-feed fejler, læses de seneste offentlige uploads automatisk
   fra kanalens videoside uden API-nøgle, hvorefter samme matching og lagring bruges.
 - Hver side har **JSON-LD schema.org**: `PodcastSeries` på forsiden,

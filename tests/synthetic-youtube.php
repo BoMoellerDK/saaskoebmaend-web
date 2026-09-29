@@ -3,6 +3,10 @@ $base_url = getenv('SAASKOBMAEND_TEST_BASE_URL') ?: 'http://127.0.0.1:8878';
 $runtime_file = getenv('SAASKOBMAEND_YOUTUBE_RUNTIME_FILE');
 $expected_video_id = getenv('SAASKOBMAEND_EXPECTED_VIDEO_ID') ?: 'AbCdEfGhI_1';
 $youtube_source = getenv('SAASKOBMAEND_EXPECTED_YOUTUBE_SOURCE') ?: 'Atom-feedet';
+// Fixture-mappen har kun maxres for AbCdEfGhI_1, så fallback-kørslen tester,
+// at en manglende højere opløsning bevarer hqdefault.
+$expected_thumbnail = getenv('SAASKOBMAEND_EXPECTED_THUMBNAIL') ?: 'maxresdefault';
+$expected_thumbnail_size = $expected_thumbnail === 'maxresdefault' ? ['1280', '720'] : ['480', '360'];
 $expected_views_raw = getenv('SAASKOBMAEND_EXPECTED_YOUTUBE_VIEWS');
 $expected_views = $expected_views_raw === false ? null : (int)$expected_views_raw;
 $checks = 0;
@@ -45,8 +49,8 @@ synthetic_check($episode_73_path !== '', 'Episode 73 mangler en episodeside');
 $episode_73 = synthetic_request($episode_73_path);
 synthetic_check($episode_73['status'] === 200, 'Episode 73 svarer ikke 200');
 synthetic_check(synthetic_meta($episode_73['body'], 'og:title') === 'Episode 73: Automatiseret testepisode om video – SaaS Købmænd', 'Episode 73 har forkert OG-titel');
-synthetic_check(synthetic_meta($episode_73['body'], 'og:image') === 'https://i.ytimg.com/vi/' . $expected_video_id . '/hqdefault.jpg', 'Episode 73 bruger ikke thumbnailen fra ' . $youtube_source);
-synthetic_check(synthetic_meta($episode_73['body'], 'og:image:width') === '480' && synthetic_meta($episode_73['body'], 'og:image:height') === '360', 'Episode 73 har forkerte OG-dimensioner');
+synthetic_check(synthetic_meta($episode_73['body'], 'og:image') === 'https://i.ytimg.com/vi/' . $expected_video_id . '/' . $expected_thumbnail . '.jpg', 'Episode 73 bruger ikke ' . $expected_thumbnail . '-thumbnailen fra ' . $youtube_source);
+synthetic_check(synthetic_meta($episode_73['body'], 'og:image:width') === $expected_thumbnail_size[0] && synthetic_meta($episode_73['body'], 'og:image:height') === $expected_thumbnail_size[1], 'Episode 73 har forkerte OG-dimensioner');
 synthetic_check(strpos($episode_73['body'], 'VideoObject') !== false, 'Episode 73 mangler VideoObject-schema');
 
 $episode_72_path = '';
@@ -63,7 +67,7 @@ $runtime_payload = json_decode($runtime_before, true);
 $runtime_episodes = is_array($runtime_payload) && isset($runtime_payload['episodes']) ? $runtime_payload['episodes'] : [];
 synthetic_check(array_keys($runtime_episodes) === [73], 'Runtime-kataloget indeholder andet end den nye episode 73');
 synthetic_check(($runtime_episodes[73]['id'] ?? '') === $expected_video_id, 'Runtime-kataloget gemte forkert video for episode 73');
-synthetic_check(($runtime_episodes[73]['thumbnail'] ?? '') === 'https://i.ytimg.com/vi/' . $expected_video_id . '/hqdefault.jpg', 'Runtime-kataloget gemte forkert thumbnail for episode 73');
+synthetic_check(($runtime_episodes[73]['thumbnail'] ?? '') === 'https://i.ytimg.com/vi/' . $expected_video_id . '/' . $expected_thumbnail . '.jpg', 'Runtime-kataloget gemte forkert thumbnail for episode 73');
 if ($expected_views !== null) synthetic_check(($runtime_episodes[73]['views'] ?? 0) === $expected_views, 'Runtime-kataloget gemte forkert visningstal fra ' . $youtube_source);
 
 usleep(1100000);

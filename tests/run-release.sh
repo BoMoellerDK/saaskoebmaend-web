@@ -12,6 +12,7 @@ fallback_runtime_file="$test_temp_dir/saaskoebmaend-youtube-runtime-fallback.jso
 fallback_server_log="$test_temp_dir/saaskoebmaend-php-server-fallback.log"
 fallback_rss_snapshot_file="$test_temp_dir/saaskoebmaend-rss-snapshot-fallback.xml"
 fixture_root="$PWD/tests/fixtures"
+export SAASKOBMAEND_YOUTUBE_THUMBNAIL_PROBE_URL="file://$fixture_root/youtube-thumbnails/"
 server_pids=()
 
 cleanup_servers() {
@@ -82,4 +83,5 @@ SAASKOBMAEND_YOUTUBE_RUNTIME_FILE="$fallback_runtime_file" \
 SAASKOBMAEND_EXPECTED_VIDEO_ID='PgFallback1' \
 SAASKOBMAEND_EXPECTED_YOUTUBE_SOURCE='kanalside-fallbacken' \
 SAASKOBMAEND_EXPECTED_YOUTUBE_VIEWS='1200' \
+SAASKOBMAEND_EXPECTED_THUMBNAIL='hqdefault' \
 php tests/synthetic-youtube.php
