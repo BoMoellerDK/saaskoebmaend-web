@@ -167,6 +167,42 @@ function youtube_thumbnail_dimensions($thumbnail) {
     if (strpos((string)$thumbnail, '/mqdefault.jpg') !== false) return [320, 180];
     return [1280, 720];
 }
+// Atom-feedet og kanalsiden giver kun hqdefault (480×360 med sorte kanter),
+// som ser pixeleret ud i fuld bredde. YouTube svarer 404 for størrelser, der
+// ikke findes, så nye matches tjekker én gang om maxres/sd findes. Et fund
+// gemmes permanent via runtime-kataloget; et fravær spørges igen efter 6 timer,
+// da YouTube kan generere maxres et stykke tid efter upload.
+function youtube_thumbnail_url_exists($url) {
+    if (strpos($url, 'file://') === 0) return is_file(substr($url, 7));
+    $ctx = stream_context_create(['http' => [
+        'method' => 'HEAD',
+        'timeout' => 3,
+        'ignore_errors' => true,
+        'user_agent' => 'saaskobmaend-web/1.0',
+    ]]);
+    $headers = @get_headers($url, 0, $ctx);
+    return is_array($headers) && isset($headers[0]) && preg_match('/\s200\s/', $headers[0] . ' ');
+}
+function youtube_upgrade_thumbnail($video_id, $thumbnail, $ttl = 21600) {
+    if (!preg_match('/^[A-Za-z0-9_-]{11}$/', (string)$video_id)) return $thumbnail;
+    if (strpos((string)$thumbnail, '/maxresdefault.jpg') !== false) return $thumbnail;
+    $probe_base = getenv('SAASKOBMAEND_YOUTUBE_THUMBNAIL_PROBE_URL') ?: 'https://i.ytimg.com/vi/';
+    $cache_file = sys_get_temp_dir() . '/saaskobmaend_ytthumb_' . md5($video_id . '|' . $probe_base . '|' . (string)getenv('SAASKOBMAEND_CACHE_NAMESPACE')) . '.txt';
+    if (is_file($cache_file) && (time() - (int)@filemtime($cache_file) < $ttl)) {
+        $cached = trim((string)@file_get_contents($cache_file));
+        return $cached !== '' ? $cached : $thumbnail;
+    }
+    $sizes = strpos((string)$thumbnail, '/sddefault.jpg') !== false ? ['maxresdefault'] : ['maxresdefault', 'sddefault'];
+    $best = '';
+    foreach ($sizes as $size) {
+        if (youtube_thumbnail_url_exists($probe_base . rawurlencode($video_id) . '/' . $size . '.jpg')) {
+            $best = 'https://i.ytimg.com/vi/' . rawurlencode($video_id) . '/' . $size . '.jpg';
+            break;
+        }
+    }
+    @file_put_contents($cache_file, $best, LOCK_EX);
+    return $best !== '' ? $best : $thumbnail;
+}
 function image_mime_type_from_url($url) {
     $path = parse_url((string)$url, PHP_URL_PATH);
     $extension = strtolower(pathinfo((string)$path, PATHINFO_EXTENSION));
@@ -674,7 +710,7 @@ function fetch_youtube_cached($feed_url, $ttl = 900, $catalog_files = [], $page_
                 'date_iso' => $published_ts ? gmdate('Y-m-d', $published_ts) : '',
                 'published_iso' => $published_ts ? gmdate('c', $published_ts) : '',
                 // Atom-feedets thumbnail eksisterer med sikkerhed. Højere opløsninger
-                // bruges kun, når det kuraterede katalog udtrykkeligt angiver dem.
+                // kommer fra kataloget eller youtube_upgrade_thumbnail() ved match.
                 'thumbnail' => $feed_thumbnail ?: ('https://i.ytimg.com/vi/' . rawurlencode($video_id) . '/hqdefault.jpg'),
                 'views' => $views,
             ];
@@ -872,6 +908,10 @@ foreach ($rss->channel->item as $item) {
     }
 
     if ($youtube) {
+        // Seed-thumbnails er kurateret; kun automatisk fundne matches opgraderes.
+        if (!isset($youtube_seed_catalog[$ep_no])) {
+            $youtube['thumbnail'] = youtube_upgrade_thumbnail($youtube['id'], $youtube['thumbnail']);
+        }
         $youtube['match'] = $youtube_match_method ?: 'catalog';
         $youtube_episode_catalog[$ep_no] = $youtube;
         $reserved_youtube_ids[$youtube['id']] = true;
