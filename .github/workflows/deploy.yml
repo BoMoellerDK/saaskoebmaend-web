@@ -19,10 +19,10 @@ jobs:
       - name: Hent koden
         uses: actions/checkout@v4
 
-      - name: Test med PHP 7.4-kompatibilitetsniveau
+      - name: Installér PHP 8.5 som på produktion
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '7.4'
+          php-version: '8.5'
           extensions: mbstring, simplexml, dom
           coverage: none
 
