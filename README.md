@@ -3,9 +3,10 @@
 Website for podcasten **SaaS Købmænd**. Det lever på `saaskøbmænd.dk` (punycode
 `xn--saaskbmnd-m3a9q.dk`) og er hostet på [Simply.com](https://www.simply.com).
 
-Runtime-kravet er **PHP 7.4 eller nyere** med `mbstring`, `SimpleXML` og `DOM`.
-Pull requests testes på både PHP 7.4 og 8.4, så nyere PHP-funktioner ikke
-utilsigtet kan afkorte outputtet på produktion, og en senere opgradering er sikker.
+Produktion kører **PHP 8.5** med `mbstring`, `SimpleXML` og `DOM`.
+Pull requests testes på PHP 7.4, 8.4 og 8.5, så kompatibilitet med PHP 7.4
+eller nyere bevares. Regressionstestene før deployment kører på PHP 8.5
+som på produktion. PHP-versionen på webhotellet styres i Simply.coms kontrolpanel.
 
 Sitet er et enkelt PHP-script uden database eller CMS: episoder hentes fra
 podcastens RSS-feed, caches og renderes til HTML.

@@ -21,8 +21,15 @@ function synthetic_check($condition, $message) {
 function synthetic_request($path) {
     global $base_url;
     $context = stream_context_create(['http' => ['ignore_errors' => true, 'timeout' => 10]]);
-    $body = @file_get_contents($base_url . $path, false, $context);
-    $headers = isset($http_response_header) ? $http_response_header : [];
+    $stream = @fopen($base_url . $path, 'r', false, $context);
+    $body = false;
+    $headers = [];
+    if ($stream !== false) {
+        $metadata = stream_get_meta_data($stream);
+        $headers = $metadata['wrapper_data'] ?? [];
+        $body = stream_get_contents($stream);
+        fclose($stream);
+    }
     $status = 0;
     if (isset($headers[0]) && preg_match('/\s(\d{3})\s/', $headers[0], $match)) $status = (int)$match[1];
     return ['status' => $status, 'body' => $body === false ? '' : $body];

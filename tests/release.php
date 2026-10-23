@@ -47,8 +47,15 @@ function request_path($path) {
         'timeout' => 10,
         'follow_location' => 0,
     ]]);
-    $body = @file_get_contents(BASE_URL . $path, false, $context);
-    $headers = isset($http_response_header) ? $http_response_header : [];
+    $stream = @fopen(BASE_URL . $path, 'r', false, $context);
+    $body = false;
+    $headers = [];
+    if ($stream !== false) {
+        $metadata = stream_get_meta_data($stream);
+        $headers = $metadata['wrapper_data'] ?? [];
+        $body = stream_get_contents($stream);
+        fclose($stream);
+    }
     $status = 0;
     if (isset($headers[0]) && preg_match('/\s(\d{3})\s/', $headers[0], $match)) $status = (int)$match[1];
     return ['status' => $status, 'headers' => $headers, 'body' => $body === false ? '' : $body];
