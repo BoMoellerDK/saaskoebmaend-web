@@ -1,0 +1,66 @@
+.container.not-found-page { align-items: center; display: grid; min-height: 100svh; padding: 60px 24px; }
+.not-found-hero { align-items: center; display: grid; gap: 40px; grid-template-columns: 1fr 1fr; }
+.not-found-kicker { color: var(--muted); font-size: .7rem; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+.not-found h1 { font-size: clamp(3.4rem, 5.4vw, 4.8rem); font-weight: 800; letter-spacing: 0; line-height: 1.12; margin: 22px 0; }
+.not-found h1 > span { color: var(--orange-dark); }
+.not-found-intro { color: var(--muted); font-size: 1rem; line-height: 1.75; max-width: 365px; }
+.not-found-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 12px 20px; margin-top: 28px; }
+.not-found-actions .button { font-size: .85rem; gap: 18px; min-height: 47px; padding: 11px 19px; }
+.not-found-meeting { align-items: center; background: transparent; border: 0; border-bottom: 1px solid var(--line); color: var(--ink); cursor: pointer; display: inline-flex; font-size: .82rem; font-weight: 700; gap: 9px; min-height: 44px; padding: 8px 0; }
+.not-found-meeting[hidden] { display: none; }
+.not-found-meeting:hover { color: var(--orange-dark); }
+.not-found a:focus-visible, .not-found button:focus-visible { outline: 3px solid var(--orange-dark); outline-offset: 5px; }
+
+.not-found-scene { min-width: 0; }
+.not-found-stage { height: 450px; isolation: isolate; position: relative; }
+.not-found-number { color: #f2dfcc; font-size: clamp(190px, 21vw, 285px); font-weight: 850; left: 50%; letter-spacing: -.05em; line-height: 1; position: absolute; top: 95px; transform: translateX(-50%); z-index: -1; }
+.not-found-host { position: absolute; width: 165px; }
+.not-found-host-anders { left: 35px; top: 145px; transform: rotate(-7deg); }
+.not-found-host-bo { right: 28px; top: 235px; transform: rotate(7deg); }
+.not-found-portrait { background: var(--orange); border: 2px solid var(--ink); border-radius: 48% 48% 42% 42%; box-shadow: 5px 5px 0 var(--orange); height: 172px; overflow: hidden; }
+.not-found-portrait img { display: block; filter: grayscale(100%); height: 100%; object-fit: cover; width: 100%; }
+.not-found-host-anders img { transform: scale(1.1); }
+.not-found-name { background: var(--paper); border: 1.5px solid var(--ink); bottom: -12px; font-size: .77rem; font-weight: 800; left: 50%; padding: 4px 16px; position: absolute; text-align: center; transform: translateX(-50%) rotate(3deg); }
+.not-found-host-bo .not-found-name { transform: translateX(-50%) rotate(-4deg); }
+.not-found-bubble { background: var(--white); border: 1.5px solid var(--ink); border-radius: 12px; box-shadow: 3px 3px 0 var(--ink); font-size: .84rem; font-weight: 700; line-height: 1.5; margin: 0; padding: 13px 16px; position: absolute; width: 207px; z-index: 2; }
+.not-found-bubble::after { background: var(--white); border-bottom: 1.5px solid var(--ink); border-right: 1.5px solid var(--ink); bottom: -7px; content: ''; height: 12px; left: 28px; position: absolute; transform: skewY(25deg); width: 13px; }
+.not-found-bubble-anders { left: 15px; top: 35px; transform: rotate(-3deg); }
+.not-found-bubble-bo { right: 0; top: 125px; transform: rotate(3deg); width: 203px; }
+.not-found-bubble-bo::after { left: auto; right: 28px; transform: skewY(-25deg); }
+.is-meeting .not-found-host-anders { animation: not-found-nod-anders .45s ease; }
+.is-meeting .not-found-host-bo { animation: not-found-nod-bo .45s ease .12s; }
+@keyframes not-found-nod-anders { 50% { transform: rotate(-3deg) translateY(-7px); } }
+@keyframes not-found-nod-bo { 50% { transform: rotate(3deg) translateY(-7px); } }
+
+@media (max-width: 1050px) and (min-width: 901px) {
+  .not-found-hero { gap: 24px; }
+  .not-found-host { width: 145px; }
+  .not-found-portrait { height: 155px; }
+  .not-found-bubble { width: 185px; }
+}
+@media (max-width: 900px) {
+  .container.not-found-page { max-width: 600px; padding-top: 60px; padding-bottom: 50px; }
+  .not-found-hero { gap: 20px; grid-template-columns: 1fr; }
+  .not-found h1 { font-size: clamp(3.3rem, 8.5vw, 4.8rem); }
+  .not-found-scene { margin: 0 auto; max-width: 500px; width: 100%; }
+}
+@media (max-width: 650px) {
+  .container.not-found-page { padding: 44px 24px 40px; }
+  .not-found-kicker { font-size: .62rem; }
+  .not-found h1 { font-size: clamp(2.6rem, 10.4vw, 4rem); }
+  .not-found-intro { font-size: .93rem; }
+  .not-found-actions { gap: 12px 18px; margin-top: 22px; }
+  .not-found-stage { height: 390px; }
+  .not-found-number { font-size: clamp(150px, 48vw, 250px); top: 108px; }
+  .not-found-host { width: 125px; }
+  .not-found-portrait { height: 135px; }
+  .not-found-host-anders { left: 10px; top: 135px; }
+  .not-found-host-bo { right: 8px; top: 230px; }
+  .not-found-name { font-size: .7rem; }
+  .not-found-bubble { font-size: .75rem; padding: 11px 12px; width: 178px; }
+  .not-found-bubble-anders { left: 3px; top: 30px; }
+  .not-found-bubble-bo { right: 2px; top: 125px; width: 172px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .not-found-scene .not-found-host { animation: none; }
+}
