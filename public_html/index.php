@@ -1193,8 +1193,8 @@ if ($is_single) {
     $og_image_width = (int)$host_profile['image_width'];
     $og_image_height = (int)$host_profile['image_height'];
 } elseif ($is_404) {
-    $page_title = "404 – Siden findes ikke · SaaS Købmænd";
-    $page_description = "Ups! Den side findes ikke. Måske leder du efter en af vores podcast-episoder?";
+    $page_title = "404 – Den side er churnet · SaaS Købmænd";
+    $page_description = "Den side er churnet. Anders og Bo holder krisemøde, mens du finder tilbage til SaaS Købmænd.";
     // $page_url bevares som forsiden (default) – en 404 skal ikke kanonisere til sig selv.
 }
 $social_title = $social_title ?: $page_title;
@@ -1601,6 +1601,7 @@ if ($ld_graph) {
     </style>
     <?php endif; ?>
     <link rel="stylesheet" href="/assets/site-v2.css?v=3">
+    <?php if ($is_404): ?><link rel="stylesheet" href="/assets/not-found.css?v=2"><?php endif; ?>
 
 <!-- OctoReports Tracking -->
 <script>!function(k,u){function E(s){return encodeURIComponent(s||"")}var q=new URLSearchParams(location.search),G=n=>q.get(n)||"",D=/iPad|Tablet|Android(?!.*Mobile)/i.test(navigator.userAgent)?2:/Mobi|Android.+Mobile|iPhone/i.test(navigator.userAgent)?1:3,N=(performance.getEntriesByType&&performance.getEntriesByType("navigation")[0])||{},P=location.pathname+location.search;P.length>1800&&(P=P.slice(0,1790)+"…");var Q="?k="+E(k)+"&h="+E(location.hostname)+"&p="+E(P)+"&r="+E(document.referrer||"")+"&pt="+E((document.title||"").slice(0,300))+"&us="+E(G("utm_source"))+"&um="+E(G("utm_medium"))+"&uc="+E(G("utm_campaign"))+"&ut="+E(G("utm_term"))+"&uu="+E(G("utm_content"))+"&dv="+D+"&tf="+(N.responseStart&&N.requestStart?Math.round(N.responseStart-N.requestStart):"")+"&dc="+(N.domContentLoadedEventEnd?Math.round(N.domContentLoadedEventEnd-(N.startTime||0)):"")+"&ld="+(N.loadEventEnd?Math.round(N.loadEventEnd-(N.startTime||0)):"")+"&t="+Date.now();(new Image).src=u+Q}("26f4922196b86eddde8fc78b553fd927457448a8","https://track.octoreports.com/track.php");</script>
@@ -1608,6 +1609,7 @@ if ($ld_graph) {
 </head>
 <body>
 <div class="site-shell">
+  <?php if (!$is_404): ?>
   <header class="site-header">
     <a class="brand" href="/" aria-label="SaaS Købmænd – forside">
       <img class="brand-mark" src="/assets/logo-mark.svg" width="42" height="42" alt="">
@@ -1621,8 +1623,9 @@ if ($ld_graph) {
       <?php endforeach; ?>
     </nav>
   </header>
+  <?php endif; ?>
 
-  <main class="container <?= $is_single ? 'single' : ($is_host ? 'host-page' : '') ?>">
+  <main class="container <?= $is_single ? 'single' : ($is_host ? 'host-page' : ($is_404 ? 'not-found-page' : '')) ?>">
   <?php if (!$is_single && !$is_host && !$is_404): ?>
     <?php $latest = $episodes[0] ?? null; ?>
     <section class="home-hero" aria-labelledby="show-title">
@@ -1865,13 +1868,37 @@ if ($ld_graph) {
     </article>
 
   <?php else: ?>
-    <div class="http404">
-      <div class="oops">404</div><h1>Siden findes ikke</h1>
-      <p class="joke">Det ligner en klassisk SaaS-fejl: <em>Feature not found</em>.</p>
-      <a class="home-btn" href="/">Tilbage til forsiden</a>
-      <div class="suggest">Eller prøv en af de nyeste episoder:</div>
-      <div class="suggest-list"><?php foreach (array_slice($episodes, 0, 5) as $ep): ?><a href="<?= '/episode/' . htmlspecialchars($ep['slug']) ?>">Ep. <?= (int)$ep['ep_no'] ?>: <?= htmlspecialchars(teaser($ep['title'], 42)) ?></a><?php endforeach; ?></div>
-    </div>
+    <section class="not-found" aria-labelledby="not-found-title">
+      <div class="not-found-hero">
+        <div class="not-found-copy">
+          <span class="not-found-kicker">404 · Udsolgt på denne hylde · saaskøbmænd.dk</span>
+          <h1 id="not-found-title">Den side<br>er <span>churnet.</span></h1>
+          <p class="not-found-intro">Anders og Bo leder efter siden. Indtil videre har de mest fundet på nye forretningsidéer.</p>
+          <div class="not-found-actions">
+            <a class="button button-primary" href="/">Tilbage til pod'en <span aria-hidden="true">↗</span></a>
+            <button class="not-found-meeting" id="not-found-meeting" type="button" aria-controls="not-found-dialogue" hidden>Indkald til krisemøde <span aria-hidden="true">↻</span></button>
+          </div>
+        </div>
+
+        <div class="not-found-scene">
+          <div class="not-found-stage">
+            <div class="not-found-number" aria-hidden="true">404</div>
+            <div class="not-found-dialogue" id="not-found-dialogue" role="status" aria-live="polite" aria-atomic="true">
+              <p class="not-found-bubble not-found-bubble-anders"><span class="sr-only">Anders: </span><span id="not-found-anders">Vi skal bare finde product-market fit.</span></p>
+              <p class="not-found-bubble not-found-bubble-bo"><span class="sr-only">Bo: </span><span id="not-found-bo">Skal vi ikke starte med at finde siden?</span></p>
+            </div>
+            <div class="not-found-host not-found-host-anders">
+              <div class="not-found-portrait"><img src="<?= htmlspecialchars($hosts[0]['image']) ?>" alt="Anders Eiler" width="1024" height="1024"></div>
+              <span class="not-found-name">Anders</span>
+            </div>
+            <div class="not-found-host not-found-host-bo">
+              <div class="not-found-portrait"><img src="<?= htmlspecialchars($hosts[1]['image']) ?>" alt="Bo Møller" width="225" height="225"></div>
+              <span class="not-found-name">Bo</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
   <?php endif; ?>
 
   <?php if (!$is_404): ?>
@@ -1894,10 +1921,12 @@ if ($ld_graph) {
     <?php endif; ?>
   <?php endif; ?>
   </main>
+  <?php if (!$is_404): ?>
   <footer class="site-footer">
     <div><strong>SaaS Købmænd</strong><span>En dansk podcast om SaaS, iværksætteri og forretning.</span></div>
     <nav aria-label="Praktiske links"><?php foreach ($platforms as $name => $url): ?><a href="<?= htmlspecialchars($url) ?>" target="_blank" rel="noopener"><?= htmlspecialchars($name) ?></a><?php endforeach; ?><a href="<?= htmlspecialchars($rss_url) ?>">RSS-feed</a><a href="/sitemap.xml">Sitemap</a><a href="/llms.txt">llms.txt</a><a href="https://app.pingpuffin.com/status/index.php?s=8vvWAEH3Uv">Driftsinformation</a></nav>
   </footer>
+  <?php endif; ?>
 </div>
 
 <?php if (false): // Gammelt view beholdes midlertidigt som reference, men renderes ikke. ?>
@@ -2125,5 +2154,6 @@ function copyShareLink(btn){
 }
 </script>
 <script src="/assets/site-v2.js?v=1"></script>
+<?php if ($is_404): ?><script src="/assets/not-found.js?v=1"></script><?php endif; ?>
 </body>
 </html>

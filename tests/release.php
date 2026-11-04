@@ -110,6 +110,23 @@ check(strpos($home['body'], 'id="episode-search"') !== false, 'Søgning mangler'
 check(strpos($home['body'], '/assets/site-v2.js?v=1') !== false, 'JavaScript mangler');
 check(strpos($home['body'], '</html>') !== false, 'HTML-outputtet er afkortet, sandsynligvis pga. en PHP-fatal');
 
+foreach (['/den-her-side-findes-ikke', '/episode/findes-ikke', '/vaert/findes-ikke', '/e/999999'] as $missing_path) {
+    $missing = request_path($missing_path);
+    $missing_dom = new DOMDocument();
+    @$missing_dom->loadHTML($missing['body']);
+    $missing_xpath = new DOMXPath($missing_dom);
+    check($missing['status'] === 404, $missing_path . ' svarer ikke 404');
+    check($missing_xpath->query('//meta[@name="robots" and @content="noindex"]')->length === 1, $missing_path . ' mangler noindex');
+    check($missing_xpath->query('//link[@rel="canonical"]')->length === 0, $missing_path . ' har en canonical URL');
+    check($missing_xpath->query('//button[@id="not-found-meeting"]')->length === 1, $missing_path . ' mangler krisemødet');
+    check($missing_xpath->query('//div[@id="not-found-dialogue" and @aria-live="polite"]')->length === 1, $missing_path . ' mangler tilgængelige talebobler');
+    check($missing_xpath->query('//header | //footer')->length === 0, $missing_path . ' viser header eller footer');
+    check($missing_xpath->query('//main//a[@href="/"]')->length === 1, $missing_path . ' mangler link tilbage til forsiden');
+    check(strpos($missing['body'], '</html>') !== false, $missing_path . ' har afkortet HTML');
+}
+check(strpos($home['body'], '/assets/not-found.') === false, '404-assets indlæses på forsiden');
+check(strpos($home['body'], '<header class="site-header">') !== false && strpos($home['body'], '<footer class="site-footer">') !== false, 'Forsiden mangler header eller footer');
+
 $episode_72 = request_path('/episode/72-er-du-blevet-traet-af-dit');
 check($episode_72['status'] === 200, 'Episode 72 svarer ikke 200');
 check(meta_property($episode_72['body'], 'og:title') === 'Er du blevet træt af dit eget firma? Her er (den lovlige) løsning. – SaaS Købmænd', 'Episode 72 har ikke en fuld, meningsfuld OG-titel');
