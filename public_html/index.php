@@ -369,6 +369,14 @@ function save_atomic_file($path, $contents) {
     return true;
 }
 
+// Tjek oftere omkring mandagens udgivelse. Dansk tid følger automatisk
+// sommer-/vintertid og er uafhængig af webserverens standardtidszone.
+function rss_cache_ttl($now = null) {
+    $local_time = ($now ?: new DateTimeImmutable('now'))->setTimezone(new DateTimeZone('Europe/Copenhagen'));
+    $clock = $local_time->format('H:i');
+    return $local_time->format('N') === '1' && $clock >= '06:55' && $clock < '07:15' ? 60 : 900;
+}
+
 // Hent RSS med to lag cache: hurtig system-cache og en permanent, deployet
 // snapshot-fil. Sitet virker derfor også efter genstart, hvis Anchor er nede.
 function fetch_rss_cached($rss_url, $ttl = 900, $fallback_file = null) {
@@ -777,7 +785,7 @@ function get_episode_image_from_item($item, $fallback = '') {
 
 // ===== Hent RSS (med cache) =====
 $rss_snapshot_file = getenv('SAASKOBMAEND_RSS_SNAPSHOT_FILE') ?: (dirname(__DIR__) . '/data/podcast-rss-fallback.xml');
-$rss = fetch_rss_cached($rss_url, 900, $rss_snapshot_file); // cache i 15 min
+$rss = fetch_rss_cached($rss_url, rss_cache_ttl(), $rss_snapshot_file);
 if (!$rss) { http_response_code(500); die('<h2>Kunne ikke hente podcast-feedet.</h2>'); }
 
 // Podcast cover — preferér itunes:image (typisk stor) først
