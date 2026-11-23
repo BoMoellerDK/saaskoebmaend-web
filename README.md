@@ -48,7 +48,10 @@ afsluttende slash redirectes også til formen uden slash.
 
 ### SEO & GEO
 
-- **RSS-feedet caches** i `sys_get_temp_dir()` i 15 min. Hver gyldig hentning
+- **RSS-feedet caches** i `sys_get_temp_dir()` i 15 min., dog kun ét minut
+  mandag kl. 06.55–07.15 dansk tid (inkl. sommer-/vintertid). Ved hvert
+  sidebesøg vurderes cachealderen med den aktuelle grænse, så en cache fra
+  før kl. 06.55 også opdateres hurtigere i udgivelsesvinduet. Hver gyldig hentning
   gemmes også atomisk i `data/podcast-rss-fallback.xml`, så sitet kan starte igen
   med alle episoder, selv hvis Anchor er nede og system-cachen er blevet slettet.
   Deployment-workflowet forsøger desuden at opdatere snapshot-filen lige før
@@ -134,6 +137,8 @@ Repoets rod spejles til FTP-roden. `.git`, `.github`, `.context`, `tests` og
 Den permanente regressionstest kan køres lokalt med `bash tests/run-release.sh`.
 Den kontrollerer bl.a. komplet HTML-output, alle RSS-episoder, redirects,
 værtssider, sitemap, episode-specifikke Open Graph-data og katalog-prioritet.
+RSS-cachetesten dækker udgivelsesvinduets grænser, sommer-/vintertid,
+serverens tidszone, cachefornyelse og fallback ved feedfejl.
 En syntetisk episode 73 tester desuden Atom-match, kanalside-fallback,
 thumbnailbeskyttelse og runtime.
 

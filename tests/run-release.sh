@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+php tests/rss-cache.php
+
 test_temp_dir="${RUNNER_TEMP:-/tmp}"
 runtime_file="$test_temp_dir/saaskoebmaend-youtube-runtime-test.json"
 server_log="$test_temp_dir/saaskoebmaend-php-server.log"
